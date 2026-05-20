@@ -80,7 +80,7 @@ df_medicoes_global = load_data("medicoes_caixa")
 if not df_medicoes_global.empty and 'valor' in df_medicoes_global.columns:
     saldo_projetado_caixa = df_medicoes_global['valor'].astype(float).sum()
 else:
-    saldo_projetado_caixa = 0.00  # Caso não haja medições, inicia com a base padrão
+    saldo_projetado_caixa = 0.00  # Começa rigorosamente zerado
 
 # ===================== SIDEBAR NAVEGAÇÃO =====================
 with st.sidebar:

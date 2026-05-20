@@ -180,7 +180,7 @@ elif page == "💳 Contas a Pagar":
                 st.cache_resource.clear()
                 st.rerun()
 
-# ===================== 3. PEDIDOS DE COMPRA (GERAÇÃO DE PDF E HISTÓRICO COM STATUS) =====================
+# ===================== 3. PEDIDOS DE COMPRA (MÓDULO CORRIGIDO COM COLUNA OC_NUMERO) =====================
 elif page == "🛒 Pedidos de Compra":
     st.title("🛒 Ordens de Compra (OC)")
     aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -254,7 +254,6 @@ elif page == "🛒 Pedidos de Compra":
             
             st.success(f"📌 PDF assinado digitalmente e gerado para a OC {dados['numero_oc']}!")
             
-            # Botão de download nativo para a pasta local
             st.download_button(
                 label="📥 Clique aqui para salvar na pasta Downloads",
                 data=st.session_state.pdf_pronto,
@@ -277,16 +276,16 @@ elif page == "🛒 Pedidos de Compra":
                     
                 if confirmar:
                     try:
-                        # 1. Salva no banco de dados com status inicial 'Aprovado'
+                        # Envia preenchendo os dois padrões de mapeamento mapeados no banco (oc_numero e numero_oc)
                         save_to_db("pedidos_compra", {
-                            "numero_oc": dados["numero_oc"], 
-                            "solicitante": dados["solicitante"], 
-                            "fornecedor": dados["fornecedor"], 
+                            "oc_numero": str(dados["numero_oc"]),
+                            "numero_oc": str(dados["numero_oc"]), 
+                            "solicitante": str(dados["solicitante"]), 
+                            "fornecedor": str(dados["fornecedor"]), 
                             "valor_total": float(dados["valor_total"]), 
                             "status": "Aprovado"
                         })
                         
-                        # 2. Gera a provisão automática no Contas a Pagar
                         save_to_db("contas_pagar", {
                             "fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", 
                             "vencimento": str(datetime.today().date() + timedelta(days=15)), 
@@ -311,9 +310,13 @@ elif page == "🛒 Pedidos de Compra":
         df = load_data("pedidos_compra")
         if not df.empty:
             df_vis = df.copy()
+            
+            # Normaliza a exibição independente de qual coluna o banco usou para a OC
+            if 'oc_numero' in df_vis.columns and 'numero_oc' not in df_vis.columns:
+                df_vis['numero_oc'] = df_vis['oc_numero']
+                
             df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
             
-            # Organiza as colunas de forma legível para a auditoria
             colunas_exibir = [c for c in ['numero_oc', 'solicitante', 'fornecedor', 'valor_total', 'status'] if c in df_vis.columns]
             st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
         else: 
@@ -326,7 +329,6 @@ elif page == "🛒 Pedidos de Compra":
         if not df_ger.empty:
             df_ger['valor_total'] = df_ger['valor_total'].astype(float)
             
-            # Editor interativo com seletor nativo estilo Excel Brasil para o Status
             mudancas = st.data_editor(
                 df_ger, 
                 use_container_width=True, 
@@ -340,18 +342,19 @@ elif page == "🛒 Pedidos de Compra":
             )
             if st.button("💾 Sincronizar Alterações de Status"):
                 id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                # Exclui linhas removidas
                 for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
                     supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
-                # Atualiza modificações de texto e status
                 for idx, row in mudancas.iterrows():
-                    supabase.table("pedidos_compra").update({
-                        "numero_oc": str(row['numero_oc']), 
+                    up_data = {
                         "solicitante": str(row['solicitante']), 
                         "fornecedor": str(row['fornecedor']), 
                         "valor_total": float(row['valor_total']), 
                         "status": str(row['status'])
-                    }).eq("id", row['id']).execute()
+                    }
+                    if 'oc_numero' in row: up_data["oc_numero"] = str(row['oc_numero'])
+                    if 'numero_oc' in row: up_data["numero_oc"] = str(row['numero_oc'])
+                    
+                    supabase.table("pedidos_compra").update(up_data).eq("id", row['id']).execute()
                 st.success("Histórico e Status sincronizados com a nuvem!")
                 st.cache_resource.clear()
                 st.rerun()

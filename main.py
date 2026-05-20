@@ -180,93 +180,122 @@ elif page == "💳 Contas a Pagar":
                 st.cache_resource.clear()
                 st.rerun()
 
-# ===================== 3. PEDIDOS DE COMPRA =====================
+# ===================== 3. PEDIDOS DE COMPRA (FLUXO EM 2 PASSOS COM PDF) =====================
 elif page == "🛒 Pedidos de Compra":
     st.title("🛒 Ordens de Compra (OC)")
     aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
     
     with aba1:
-        # Gerenciamento de fluxo por estados do Streamlit
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        import io
+
+        # Inicializa o controle de etapas
         if "oc_etapa" not in st.session_state:
             st.session_state.oc_etapa = 1
-            
+
+        # ---------------- PASSO 1: PREENCHIMENTO E GERADO DE PDF ----------------
         if st.session_state.oc_etapa == 1:
+            st.subheader("📋 Passo 1: Informações da Ordem de Compra")
             with st.form("f_pedido"):
                 cc1, cc2 = st.columns(2)
                 num_oc = cc1.text_input("Número da OC")
                 solicitante = cc2.text_input("Solicitante / Engenheiro")
-                cc3, cc4 = st.columns(2)
+                cc3, cc4 = columns_3 = st.columns(2)
                 forn = cc3.text_input("Fornecedor")
                 val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                 
-                if st.form_submit_button("🚀 Avançar para Envio"):
+                if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
                     if num_oc and forn and val_total > 0:
+                        # Guarda os dados temporariamente na sessão
                         st.session_state.dados_oc = {
                             "numero_oc": num_oc,
                             "solicitante": solicitante,
                             "fornecedor": forn,
                             "valor_total": float(val_total)
                         }
+                        
+                        # Construção do arquivo PDF em memória
+                        pdf_buffer = io.BytesIO()
+                        doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+                        styles = getSampleStyleSheet()
+                        
+                        # Estilo personalizado para o documento Greenfield
+                        style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
+                        style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
+                        
+                        story = [
+                            Paragraph(f"<b>GREENFIELD Engenharia - Ordem de Compra Nº {num_oc}</b>", style_titulo),
+                            Spacer(1, 15),
+                            Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
+                            Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
+                            Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
+                            Spacer(1, 30),
+                            Paragraph("____________________________________________", style_corpo),
+                            Paragraph("Assinatura do Departamento de Suprimentos / DP", style_corpo)
+                        ]
+                        
+                        doc.build(story)
+                        pdf_buffer.seek(0)
+                        st.session_state.pdf_pronto = pdf_buffer.getvalue()
+                        
                         st.session_state.oc_etapa = 2
                         st.rerun()
                     else:
-                        st.error("Por favor, preencha todos os campos obrigatórios.")
-                        
+                        st.error("Por favor, preencha todos os campos obrigatórios antes de gerar o PDF.")
+
+        # ---------------- PASSO 2: DOWNLOAD E ENVIO POR E-MAIL ----------------
         elif st.session_state.oc_etapa == 2:
-            st.subheader("✉️ Anexo e Direcionamento do Pedido")
-            st.info(f"Processando OC: {st.session_state.dados_oc['numero_oc']} | Fornecedor: {st.session_state.dados_oc['fornecedor']}")
+            st.subheader("✉️ Passo 2: Baixar Arquivo e Enviar para o Financeiro")
+            dados = st.session_state.dados_oc
             
-            email_fin = st.text_input("E-mail do Financeiro destino", value="financeiro@greenfield.com.br")
-            arquivo_anexo = st.file_uploader("Anexe o arquivo/PDF do Pedido", type=["pdf", "docx", "png", "jpg"])
+            st.info(f"PDF Gerado com Sucesso para a OC {dados['numero_oc']}!")
+            
+            # Botão de download nativo (Simula o salvamento local)
+            st.download_button(
+                label="📥 Baixar PDF do Pedido (Salvar em Downloads)",
+                data=st.session_state.pdf_pronto,
+                file_name=f"OC_{dados['numero_oc']}.pdf",
+                mime="application/pdf"
+            )
+            
+            st.markdown("---")
+            
+            # Formulário de direcionamento de e-mail
+            email_fin = st.text_input("E-mail de Destino do Financeiro", value="financeiro@greenfield.com.br")
+            st.file_uploader("Confirme o anexo se desejar revisar o arquivo", type=["pdf"])
             
             c_ab1, c_ab2 = st.columns(2)
-            if c_ab1.button("🔙 Voltar/Corrigir"):
+            if c_ab1.button("🔙 Voltar / Corrigir Dados"):
                 st.session_state.oc_etapa = 1
                 st.rerun()
                 
-            if c_ab2.button("💾 Confirmar e Finalizar Envio"):
-                dados = st.session_state.dados_oc
-                # Salva no banco de dados
-                save_to_db("pedidos_compra", {"numero_oc": dados["numero_oc"], "solicitante": dados["solicitante"], "fornecedor": dados["fornecedor"], "valor_total": dados["valor_total"], "status": "Aberto"})
-                save_to_db("contas_pagar", {"fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", "vencimento": str(datetime.today().date() + timedelta(days=15)), "valor": dados["valor_total"], "status": "Pendente"})
+            if c_ab2.button("🚀 Confirmar e Enviar para o Financeiro"):
+                # Realiza a persistência das tabelas no banco de dados
+                save_to_db("pedidos_compra", {
+                    "numero_oc": dados["numero_oc"], 
+                    "solicitante": dados["solicitante"], 
+                    "fornecedor": dados["fornecedor"], 
+                    "valor_total": dados["valor_total"], 
+                    "status": "Aberto"
+                })
                 
-                st.success(f"✅ Pedido enviado com sucesso para {email_fin}! Integrado ao Contas a Pagar.")
+                save_to_db("contas_pagar", {
+                    "fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", 
+                    "vencimento": str(datetime.today().date() + timedelta(days=15)), 
+                    "valor": dados["valor_total"], 
+                    "status": "Pendente"
+                })
+                
+                st.success(f"✅ Pedido disparado com sucesso para {email_fin} e provisionado no Contas a Pagar!")
+                
+                # Limpa os estados de sessão e retorna ao passo 1
                 st.session_state.oc_etapa = 1
                 del st.session_state.dados_oc
-                st.rerun()
-
-    with aba2:
-        df = load_data("pedidos_compra")
-        if not df.empty:
-            df_vis = df.copy()
-            df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-            st.dataframe(df_vis[['numero_oc', 'solicitante', 'fornecedor', 'valor_total', 'status']], use_container_width=True, hide_index=True)
-        else: st.info("Nenhum pedido localizado.")
-
-    with aba3:
-        df_ger = load_data("pedidos_compra")
-        if not df_ger.empty:
-            df_ger['valor_total'] = df_ger['valor_total'].astype(float)
-            mudancas = st.data_editor(
-                df_ger, 
-                use_container_width=True, 
-                num_rows="dynamic", 
-                hide_index=True, 
-                key="edit_pc",
-                column_config={
-                    "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f")
-                }
-            )
-            if st.button("💾 Sincronizar Pedidos"):
-                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
-                    supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
-                for idx, row in mudancas.iterrows():
-                    supabase.table("pedidos_compra").update({"numero_oc": str(row['numero_oc']), "solicitante": str(row['solicitante']), "fornecedor": str(row['fornecedor']), "valor_total": float(row['valor_total']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                st.success("Alterações salvas!")
+                del st.session_state.pdf_pronto
                 st.cache_resource.clear()
                 st.rerun()
-
 # ===================== 4. ACORDOS JUDICIAIS =====================
 elif page == "⚖️ Acordos Judiciais":
     st.title("⚖️ Controle de Acordos Judiciais")

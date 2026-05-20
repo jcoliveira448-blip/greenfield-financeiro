@@ -97,7 +97,6 @@ if page == "📊 Dashboard":
     df_pedidos = load_data("pedidos_compra")
     df_parcelas = load_data("parcelas_acordo")
     
-    # Cálculos dinâmicos baseados no que realmente está no banco
     val_contas = df_contas['valor'].astype(float).sum() if not df_contas.empty and 'valor' in df_contas.columns else 0.0
     val_pedidos = df_pedidos['valor_total'].astype(float).sum() if not df_pedidos.empty and 'valor_total' in df_pedidos.columns else 0.0
     val_judiciais = df_parcelas['valor_parcela'].astype(float).sum() if not df_parcelas.empty and 'valor_parcela' in df_parcelas.columns else 0.0
@@ -156,7 +155,18 @@ elif page == "💳 Contas a Pagar":
     with aba3:
         df_ger = load_data("contas_pagar")
         if not df_ger.empty:
-            mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_cp")
+            # Configuração no padrão Excel Brasil para a coluna de valor
+            mudancas = st.data_editor(
+                df_ger, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                hide_index=True, 
+                key="edit_cp",
+                column_config={
+                    "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", help="Formato Excel Brasil"),
+                    "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY")
+                }
+            )
             if st.button("💾 Sincronizar Contas a Pagar"):
                 id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
                 for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
@@ -198,7 +208,17 @@ elif page == "🛒 Pedidos de Compra":
     with aba3:
         df_ger = load_data("pedidos_compra")
         if not df_ger.empty:
-            mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_pc")
+            # Configuração no padrão Excel Brasil para a coluna de valor_total
+            mudancas = st.data_editor(
+                df_ger, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                hide_index=True, 
+                key="edit_pc",
+                column_config={
+                    "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f")
+                }
+            )
             if st.button("💾 Sincronizar Pedidos"):
                 id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
                 for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
@@ -232,7 +252,7 @@ elif page == "⚖️ Acordos Judiciais":
                         valor_parcela = float(val_total) / int(qtd_parc)
                         for i in range(1, int(qtd_parc) + 1):
                             venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                            save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status": "Pendente"})
+                            save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status": "Pendente"})
                         st.success("✅ Acordo firmado e parcelas geradas!")
                         st.rerun()
 
@@ -241,7 +261,6 @@ elif page == "⚖️ Acordos Judiciais":
         df_acod = load_data("acordos_judiciais")
         
         if not df_parc.empty and not df_acod.empty:
-            # Cruzamento inteligente de dados para exibir Processo e Reclamante no Histórico
             df_mestre = pd.merge(df_parc, df_acod, left_on="acordo_id", right_on="id", suffixes=('_parc', '_acord'))
             df_mestre['vencimento'] = formatar_data_br(df_mestre['vencimento'])
             df_mestre['valor_parcela'] = df_mestre['valor_parcela'].apply(formatar_moeda_br)
@@ -257,14 +276,25 @@ elif page == "⚖️ Acordos Judiciais":
         st.subheader("Gerenciamento de Parcelas")
         df_ger = load_data("parcelas_acordo")
         if not df_ger.empty:
-            mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_aj")
+            # Configuração no padrão Excel Brasil para valor_parcela e data dentro do editor
+            mudancas = st.data_editor(
+                df_ger, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                hide_index=True, 
+                key="edit_aj",
+                column_config={
+                    "valor_parcela": st.column_config.NumberColumn("Valor da Parcela (R$)", format="R$ %.2f"),
+                    "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY")
+                }
+            )
             if st.button("💾 Sincronizar Cronograma Judicial"):
                 id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
                 for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
                     supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
                 for idx, row in mudancas.iterrows():
                     supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                st.success("Cronograma atualizado!")
+                st.success("Cronograma updated!")
                 st.cache_resource.clear()
                 st.rerun()
 
@@ -303,7 +333,19 @@ elif page == "👥 Salários":
     with aba3:
         df_ger = load_data("folha_pagamento")
         if not df_ger.empty:
-            mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_sl")
+            # Configuração no padrão Excel Brasil para todas as colunas de valor da Folha
+            mudancas = st.data_editor(
+                df_ger, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                hide_index=True, 
+                key="edit_sl",
+                column_config={
+                    "salario_base": st.column_config.NumberColumn("Salário Base (R$)", format="R$ %.2f"),
+                    "beneficios": st.column_config.NumberColumn("Benefícios (R$)", format="R$ %.2f"),
+                    "descontos": st.column_config.NumberColumn("Descontos (R$)", format="R$ %.2f")
+                }
+            )
             if st.button("💾 Sincronizar Folha"):
                 id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
                 for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:

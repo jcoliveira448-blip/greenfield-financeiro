@@ -3,3 +3,4 @@ supabase>=2.3.0
 pandas>=2.0.0
 plotly>=5.18.0
 postgrest>=0.10.0
+reportlab

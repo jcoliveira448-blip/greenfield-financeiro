@@ -142,17 +142,17 @@ elif page == "💳 Contas a Pagar & Caixa":
     
     aba_caixa, aba_lancar, aba_gerenciar = st.tabs(["📊 Saldo & Medições", "📋 Lançar Nova Conta", "🛠️ Gerenciar Contas"])
     
-    # --- ABA CAIXA E MEDIÇÕES ---
+    # --- ABA CAIXA E MEDIÇÕES (AGORA EDITÁVEL) ---
     with aba_caixa:
         st.subheader("Saldo Projetado de Caixa (Fluxo de Receitas)")
         st.metric(label="Saldo Atual Acumulado", value=formatar_moeda_br(saldo_projetado_caixa))
-        st.info("💡 Para alterar este saldo, lance uma nova medição recebida ou ajuste o histórico abaixo.")
+        st.info("💡 Este saldo inicia em R$ 0,00. Adicione lançamentos de medições ou edite o histórico abaixo para ajustar o caixa.")
         
         st.markdown("---")
-        st.subheader("📈 Registrar Nova Medição (Entrada em Caixa)")
+        st.subheader("📈 Registrar Nova Medição / Saldo Inicial")
         with st.form("f_nova_medicao"):
             cc1, cc2, cc3 = st.columns(3)
-            nova_ordem = cc1.text_input("Identificador da Medição (Ex: Ordem 01, Saldo Inicial)")
+            nova_ordem = cc1.text_input("Identificador da Medição (Ex: Aporte Inicial, Medição BM-01)")
             novo_valor = cc2.number_input("Valor Recebido (R$)", min_value=0.00, format="%.2f")
             nova_data = cc3.date_input("Data da Medição", value=datetime.today().date())
             
@@ -167,19 +167,45 @@ elif page == "💳 Contas a Pagar & Caixa":
                     st.cache_resource.clear()
                     st.rerun()
                 else:
-                    st.error("Por favor, informe a ordem/identificação e o valor.")
+                    st.error("Por favor, informe a identificação e o valor.")
         
         st.markdown("---")
-        st.subheader("📜 Histórico de Medições Realizadas")
+        st.subheader("📜 Histórico e Edição de Medições")
         if not df_medicoes_global.empty:
-            df_vis_med = df_medicoes_global.copy()
-            df_vis_med['valor'] = df_vis_med['valor'].apply(formatar_moeda_br)
-            df_vis_med['data_medicao'] = df_vis_med['data_medicao'].apply(formatar_data_br)
+            df_medicoes_global['valor'] = df_medicoes_global['valor'].astype(float)
             
-            cols_med = [c for c in ['ordem', 'valor', 'data_medicao'] if c in df_vis_med.columns]
-            st.dataframe(df_vis_med[cols_med], use_container_width=True, hide_index=True)
+            # Tabela Interativa que permite EDITAR os valores das medições já salvas
+            mudancas_med = st.data_editor(
+                df_medicoes_global,
+                use_container_width=True,
+                num_rows="dynamic",
+                hide_index=True,
+                key="edit_medicoes_caixa",
+                column_config={
+                    "valor": st.column_config.NumberColumn("Valor Recebido (R$)", format="R$ %.2f"),
+                    "data_medicao": st.column_config.TextColumn("Data (AAAA-MM-DD)"),
+                    "ordem": st.column_config.TextColumn("Identificador / Ordem")
+                }
+            )
+            
+            if st.button("💾 Salvar Alterações de Saldo/Medições"):
+                id_tela_med = mudancas_med['id'].tolist() if 'id' in mudancas_med.columns else []
+                # Remove do banco se o usuário deletar a linha na tela
+                for id_del in [x for x in df_medicoes_global['id'].tolist() if x not in id_tela_med]:
+                    supabase.table("medicoes_caixa").delete().eq("id", id_del).execute()
+                # Atualiza caso mude o valor ou nome
+                for idx, row in mudancas_med.iterrows():
+                    supabase.table("medicoes_caixa").update({
+                        "ordem": str(row['ordem']),
+                        "valor": float(row['valor']),
+                        "data_medicao": str(row['data_medicao'])
+                    }).eq("id", row['id']).execute()
+                
+                st.success("Histórico de caixa atualizado com sucesso!")
+                st.cache_resource.clear()
+                st.rerun()
         else:
-            st.info("Nenhuma medição cadastrada no histórico do caixa.")
+            st.info("Nenhuma medição cadastrada. O caixa está zerado.")
 
     # --- ABA LANÇAR CONTAS ---
     with aba_lancar:

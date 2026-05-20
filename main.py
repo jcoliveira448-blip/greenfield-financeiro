@@ -194,7 +194,7 @@ elif page == "🛒 Pedidos de Compra":
     else:
         st.info("Nenhum pedido de compra cadastrado.")
 
-# 4. ACORDOS JUDICIAIS (COM PARCELAMENTO AUTOMÁTICO)
+# 4. ACORDOS JUDICIAIS (COM PARCELAMENTO AUTOMÁTICO E DATAS FORMATADAS)
 elif page == "⚖️ Acordos Judiciais":
     st.title("⚖️ Controle de Acordos Judiciais")
     
@@ -215,31 +215,56 @@ elif page == "⚖️ Acordos Judiciais":
                 if proc and rec and val_total > 0:
                     # 1. Salva o acordo principal
                     acordo = save_to_db("acordos_judiciais", {
-                        "processo": proc, "reclamante": rec,
-                        "valor_total": float(val_total), "qtd_parcelas": int(qtd_parc), "status": "Em andamento"
+                        "processo": proc, 
+                        "reclamante": rec,
+                        "valor_total": float(val_total), 
+                        "qtd_parcelas": int(qtd_parc), 
+                        "status": "Em andamento"
                     })
                     
+                    # Se o banco retornou sucesso (mesmo se for UUID ou ID sequencial)
                     if acordo:
+                        # Captura o ID gerado pelo Supabase de forma segura
                         acordo_id = acordo[0]['id']
                         valor_parcela = float(val_total) / int(qtd_parc)
                         
+                        erro_parcela = False
                         # 2. Loop de Parcelamento Automático
                         for i in range(1, int(qtd_parc) + 1):
                             venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                            save_to_db("parcelas_acordo", {
+                            
+                            res_parc = save_to_db("parcelas_acordo", {
                                 "acordo_id": acordo_id,
                                 "numero_parcela": i,
                                 "valor_parcela": valor_parcela,
-                                "vencimento": str(venc_parcela),
+                                "vencimento": str(venc_parcela), # Salva no formato do banco (YYYY-MM-DD)
                                 "status": "Pendente"
                             })
-                        st.success(f"Acordo fechado! {qtd_parc} parcelas calculadas e salvas na nuvem.")
-                        st.rerun()
+                            if res_parc is None:
+                                erro_parcela = True
+                        
+                        if not erro_parcela:
+                            st.success(f"Acordo fechado! {qtd_parc} parcelas calculadas e salvas na nuvem.")
+                            st.rerun()
+                        else:
+                            st.warning("O acordo foi criado, mas houve um problema ao gerar as parcelas no banco. Verifique as permissões da tabela 'parcelas_acordo'.")
 
     with aba2:
         df_visualizacao = load_data("parcelas_acordo")
         if not df_visualizacao.empty:
             st.subheader("Cronograma Geral de Pagamentos Judiciais")
+            
+            # Ajuste de Formato de Data para o padrão Brasileiro (DD/MM/YYYY)
+            if 'vencimento' in df_visualizacao.columns:
+                try:
+                    df_visualizacao['vencimento'] = pd.to_datetime(df_visualizacao['vencimento']).dt.strftime('%d/%m/%Y')
+                except Exception:
+                    pass # Caso já esteja formatado ou dê erro de conversão
+            
+            # Formatação visual dos valores em R$
+            if 'valor_parcela' in df_visualizacao.columns:
+                df_visualizacao['valor_parcela'] = df_visualizacao['valor_parcela'].map('R$ {:,.2f}'.format)
+
             st.data_editor(df_visualizacao, use_container_width=True, hide_index=True)
         else:
             st.info("Nenhuma parcela gerada no sistema ainda.")

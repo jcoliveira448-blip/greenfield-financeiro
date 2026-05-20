@@ -64,7 +64,10 @@ def save_to_db(table: str, data: dict):
         return None
 
 def formatar_moeda_br(val):
-    return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    try:
+        return f"R$ {float(val):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except:
+        return str(val)
 
 def formatar_data_br(dt_str):
     try:
@@ -155,7 +158,7 @@ elif page == "💳 Contas a Pagar":
     with aba3:
         df_ger = load_data("contas_pagar")
         if not df_ger.empty:
-            # Configuração no padrão Excel Brasil para a coluna de valor
+            df_ger['valor'] = df_ger['valor'].astype(float)
             mudancas = st.data_editor(
                 df_ger, 
                 use_container_width=True, 
@@ -163,8 +166,8 @@ elif page == "💳 Contas a Pagar":
                 hide_index=True, 
                 key="edit_cp",
                 column_config={
-                    "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", help="Formato Excel Brasil"),
-                    "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY")
+                    "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
+                    "vencimento": st.column_config.TextColumn("Vencimento (AAAA-MM-DD)")
                 }
             )
             if st.button("💾 Sincronizar Contas a Pagar"):
@@ -183,19 +186,54 @@ elif page == "🛒 Pedidos de Compra":
     aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
     
     with aba1:
-        with st.form("f_pedido"):
-            cc1, cc2 = st.columns(2)
-            num_oc = cc1.text_input("Número da OC")
-            solicitante = cc2.text_input("Solicitante / Engenheiro")
-            cc3, cc4 = st.columns(2)
-            forn = cc3.text_input("Fornecedor")
-            val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
-            if st.form_submit_button("🚀 Enviar Pedido"):
-                if num_oc and val_total > 0:
-                    save_to_db("pedidos_compra", {"numero_oc": num_oc, "solicitante": solicitante, "fornecedor": forn, "valor_total": float(val_total), "status": "Aberto"})
-                    save_to_db("contas_pagar", {"fornecedor": f"OC {num_oc} - {forn}", "vencimento": str(datetime.today().date() + timedelta(days=15)), "valor": float(val_total), "status": "Pendente"})
-                    st.success("Pedido registrado e integrado ao Contas a Pagar!")
-                    st.rerun()
+        # Gerenciamento de fluxo por estados do Streamlit
+        if "oc_etapa" not in st.session_state:
+            st.session_state.oc_etapa = 1
+            
+        if st.session_state.oc_etapa == 1:
+            with st.form("f_pedido"):
+                cc1, cc2 = st.columns(2)
+                num_oc = cc1.text_input("Número da OC")
+                solicitante = cc2.text_input("Solicitante / Engenheiro")
+                cc3, cc4 = st.columns(2)
+                forn = cc3.text_input("Fornecedor")
+                val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
+                
+                if st.form_submit_button("🚀 Avançar para Envio"):
+                    if num_oc and forn and val_total > 0:
+                        st.session_state.dados_oc = {
+                            "numero_oc": num_oc,
+                            "solicitante": solicitante,
+                            "fornecedor": forn,
+                            "valor_total": float(val_total)
+                        }
+                        st.session_state.oc_etapa = 2
+                        st.rerun()
+                    else:
+                        st.error("Por favor, preencha todos os campos obrigatórios.")
+                        
+        elif st.session_state.oc_etapa == 2:
+            st.subheader("✉️ Anexo e Direcionamento do Pedido")
+            st.info(f"Processando OC: {st.session_state.dados_oc['numero_oc']} | Fornecedor: {st.session_state.dados_oc['fornecedor']}")
+            
+            email_fin = st.text_input("E-mail do Financeiro destino", value="financeiro@greenfield.com.br")
+            arquivo_anexo = st.file_uploader("Anexe o arquivo/PDF do Pedido", type=["pdf", "docx", "png", "jpg"])
+            
+            c_ab1, c_ab2 = st.columns(2)
+            if c_ab1.button("🔙 Voltar/Corrigir"):
+                st.session_state.oc_etapa = 1
+                st.rerun()
+                
+            if c_ab2.button("💾 Confirmar e Finalizar Envio"):
+                dados = st.session_state.dados_oc
+                # Salva no banco de dados
+                save_to_db("pedidos_compra", {"numero_oc": dados["numero_oc"], "solicitante": dados["solicitante"], "fornecedor": dados["fornecedor"], "valor_total": dados["valor_total"], "status": "Aberto"})
+                save_to_db("contas_pagar", {"fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", "vencimento": str(datetime.today().date() + timedelta(days=15)), "valor": dados["valor_total"], "status": "Pendente"})
+                
+                st.success(f"✅ Pedido enviado com sucesso para {email_fin}! Integrado ao Contas a Pagar.")
+                st.session_state.oc_etapa = 1
+                del st.session_state.dados_oc
+                st.rerun()
 
     with aba2:
         df = load_data("pedidos_compra")
@@ -208,7 +246,7 @@ elif page == "🛒 Pedidos de Compra":
     with aba3:
         df_ger = load_data("pedidos_compra")
         if not df_ger.empty:
-            # Configuração no padrão Excel Brasil para a coluna de valor_total
+            df_ger['valor_total'] = df_ger['valor_total'].astype(float)
             mudancas = st.data_editor(
                 df_ger, 
                 use_container_width=True, 
@@ -252,7 +290,7 @@ elif page == "⚖️ Acordos Judiciais":
                         valor_parcela = float(val_total) / int(qtd_parc)
                         for i in range(1, int(qtd_parc) + 1):
                             venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                            save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status": "Pendente"})
+                            save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status": "Pendente"})
                         st.success("✅ Acordo firmado e parcelas geradas!")
                         st.rerun()
 
@@ -276,7 +314,7 @@ elif page == "⚖️ Acordos Judiciais":
         st.subheader("Gerenciamento de Parcelas")
         df_ger = load_data("parcelas_acordo")
         if not df_ger.empty:
-            # Configuração no padrão Excel Brasil para valor_parcela e data dentro do editor
+            df_ger['valor_parcela'] = df_ger['valor_parcela'].astype(float)
             mudancas = st.data_editor(
                 df_ger, 
                 use_container_width=True, 
@@ -285,7 +323,7 @@ elif page == "⚖️ Acordos Judiciais":
                 key="edit_aj",
                 column_config={
                     "valor_parcela": st.column_config.NumberColumn("Valor da Parcela (R$)", format="R$ %.2f"),
-                    "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY")
+                    "vencimento": st.column_config.TextColumn("Vencimento (AAAA-MM-DD)")
                 }
             )
             if st.button("💾 Sincronizar Cronograma Judicial"):
@@ -294,7 +332,7 @@ elif page == "⚖️ Acordos Judiciais":
                     supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
                 for idx, row in mudancas.iterrows():
                     supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                st.success("Cronograma updated!")
+                st.success("Cronograma atualizado com sucesso!")
                 st.cache_resource.clear()
                 st.rerun()
 
@@ -333,7 +371,9 @@ elif page == "👥 Salários":
     with aba3:
         df_ger = load_data("folha_pagamento")
         if not df_ger.empty:
-            # Configuração no padrão Excel Brasil para todas as colunas de valor da Folha
+            df_ger['salario_base'] = df_ger['salario_base'].astype(float)
+            df_ger['beneficios'] = df_ger['beneficios'].astype(float)
+            df_ger['descontos'] = df_ger['descontos'].astype(float)
             mudancas = st.data_editor(
                 df_ger, 
                 use_container_width=True, 
@@ -352,6 +392,6 @@ elif page == "👥 Salários":
                     supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                 for idx, row in mudancas.iterrows():
                     supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
-                st.success("Registros atualizados!")
+                st.success("Registros updated!")
                 st.cache_resource.clear()
                 st.rerun()

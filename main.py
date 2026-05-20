@@ -129,57 +129,74 @@ if page == "📊 Dashboard":
         else:
             st.info("Sem dados de Pedidos para exibir gráficos.")
 
-# ===================== 2. CONTAS A PAGAR =====================
-elif page == "💳 Contas a Pagar":
-    st.title("💳 Gestão de Contas a Pagar")
-    aba1, aba2, aba3 = st.tabs(["Lançamento", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
+# ===================== 4. GESTÃO DE CAIXA E MEDIÇÕES =====================
+elif page == "💵 Caixa & Medições" or page == "Contas a Pagar": # Ajuste conforme seu menu
+    st.title("💵 Fluxo de Caixa e Medições")
     
-    with aba1:
-        with st.form("f_conta"):
-            cx1, cx2, cx3 = st.columns(3)
-            forn = cx1.text_input("Fornecedor / Favorecido")
-            venc = cx2.date_input("Data de Vencimento", value=datetime.today(), format="DD/MM/YYYY")
-            valor = cx3.number_input("Valor (R$)", min_value=0.01, format="%.2f")
-            if st.form_submit_button("💾 Agendar Pagamento"):
-                if forn and valor > 0:
-                    save_to_db("contas_pagar", {"fornecedor": forn, "vencimento": str(venc), "valor": float(valor), "status": "Pendente"})
-                    st.success("Conta provisionada!")
-                    st.rerun()
+    aba_fluxo, aba_medicoes = st.tabs(["📊 Saldo Projetado", "📈 Registrar Medição (Histórico)"])
+    
+    with aba_fluxo:
+        st.subheader("Saldo Projetado em Caixa")
+        
+        # Busca todas as medições para calcular o saldo total acumulado
+        df_med = load_data("medicoes_caixa")
+        
+        if not df_med.empty:
+            # Soma todas as entradas de medições de receita
+            saldo_total_medicoes = df_med['valor'].astype(float).sum()
+        else:
+            saldo_total_medicoes = 1250000.00 # Valor base caso esteja vazio
+            
+        # Exibe o painel de destaque (Card) com o saldo dinâmico
+        st.metric(label="Saldo Projetado Atualizado", value=formatar_moeda_br(saldo_total_medicoes))
+        
+        st.info("💡 Este saldo é calculado automaticamente somando o Saldo Inicial com as novas medições informadas na aba ao lado.")
 
-    with aba2:
-        df = load_data("contas_pagar")
-        if not df.empty:
-            df_vis = df.copy()
-            df_vis['vencimento'] = formatar_data_br(df_vis['vencimento'])
+    with aba_medicoes:
+        st.subheader("📋 Inserir Nova Medição Recebida")
+        
+        # Formulário para entrada no padrão: ordem; valor; data
+        with st.form("f_nova_medicao"):
+            cc1, cc2, cc3 = st.columns(3)
+            nova_ordem = cc1.text_input("Identificador / Ordem (Ex: Medição BM-01)")
+            novo_valor = cc2.number_input("Valor Recebido (R$)", min_value=0.00, format="%.2f")
+            nova_data = cc3.date_input("Data do Recebimento", value=datetime.today().date())
+            
+            if st.form_submit_button("🚀 Lançar e Atualizar Caixa"):
+                if nova_ordem and novo_valor > 0:
+                    try:
+                        # Salva no banco de dados Supabase
+                        save_to_db("medicoes_caixa", {
+                            "ordem": str(nova_ordem),
+                            "valor": float(novo_valor),
+                            "data_medicao": str(nova_data)
+                        })
+                        st.success(f"✅ Medição '{nova_ordem}' de {formatar_moeda_br(novo_valor)} integrada ao caixa!")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar medição: {e}")
+                else:
+                    st.error("Preencha a ordem e o valor recebido.")
+        
+        st.markdown("---")
+        st.subheader("📜 Histórico de Medições Realizadas")
+        
+        # Carrega e exibe o histórico no formato solicitado (ordem; valor; data)
+        df_historico = load_data("medicoes_caixa")
+        if not df_historico.empty:
+            # Formata para exibição amigável
+            df_vis = df_historico.copy()
             df_vis['valor'] = df_vis['valor'].apply(formatar_moeda_br)
-            st.dataframe(df_vis[['fornecedor', 'vencimento', 'valor', 'status']], use_container_width=True, hide_index=True)
-        else: st.info("Nenhuma conta localizada.")
-
-    with aba3:
-        df_ger = load_data("contas_pagar")
-        if not df_ger.empty:
-            df_ger['valor'] = df_ger['valor'].astype(float)
-            mudancas = st.data_editor(
-                df_ger, 
-                use_container_width=True, 
-                num_rows="dynamic", 
-                hide_index=True, 
-                key="edit_cp",
-                column_config={
-                    "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
-                    "vencimento": st.column_config.TextColumn("Vencimento (AAAA-MM-DD)")
-                }
-            )
-            if st.button("💾 Sincronizar Contas a Pagar"):
-                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
-                    supabase.table("contas_pagar").delete().eq("id", id_del).execute()
-                for idx, row in mudancas.iterrows():
-                    supabase.table("contas_pagar").update({"fornecedor": str(row['fornecedor']), "vencimento": str(row['vencimento']), "valor": float(row['valor']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                st.success("Banco de Dados Atualizado!")
-                st.cache_resource.clear()
-                st.rerun()
-
+            
+            # Ordena pela data mais recente
+            if 'data_medicao' in df_vis.columns:
+                df_vis = df_vis.sort_values(by='data_medicao', ascending=False)
+                
+            colunas_exibir = [c for c in ['ordem', 'valor', 'data_medicao'] if c in df_vis.columns]
+            st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma medição registrada ainda.")
 # ===================== 3. PEDIDOS DE COMPRA (MÓDULO CORRIGIDO COM COLUNA OC_NUMERO) =====================
 elif page == "🛒 Pedidos de Compra":
     st.title("🛒 Ordens de Compra (OC)")

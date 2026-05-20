@@ -180,7 +180,7 @@ elif page == "💳 Contas a Pagar":
                 st.cache_resource.clear()
                 st.rerun()
 
-# ===================== 3. PEDIDOS DE COMPRA (FLUXO EM 2 PASSOS COM PDF) =====================
+# ===================== 3. PEDIDOS DE COMPRA (FLUXO EM 2 PASSOS CORRIGIDO) =====================
 elif page == "🛒 Pedidos de Compra":
     st.title("🛒 Ordens de Compra (OC)")
     aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -191,24 +191,28 @@ elif page == "🛒 Pedidos de Compra":
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         import io
 
-        # Inicializa o controle de etapas
+        # Inicializa o controle de etapas de forma segura
         if "oc_etapa" not in st.session_state:
             st.session_state.oc_etapa = 1
+        if "dados_oc" not in st.session_state:
+            st.session_state.dados_oc = None
+        if "pdf_pronto" not in st.session_state:
+            st.session_state.pdf_pronto = None
 
         # ---------------- PASSO 1: PREENCHIMENTO E GERADO DE PDF ----------------
         if st.session_state.oc_etapa == 1:
             st.subheader("📋 Passo 1: Informações da Ordem de Compra")
-            with st.form("f_pedido"):
+            with st.form("f_pedido_passo1"):
                 cc1, cc2 = st.columns(2)
                 num_oc = cc1.text_input("Número da OC")
                 solicitante = cc2.text_input("Solicitante / Engenheiro")
-                cc3, cc4 = columns_3 = st.columns(2)
+                cc3, cc4 = st.columns(2)
                 forn = cc3.text_input("Fornecedor")
                 val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                 
                 if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
                     if num_oc and forn and val_total > 0:
-                        # Guarda os dados temporariamente na sessão
+                        # Salva firmemente no session_state
                         st.session_state.dados_oc = {
                             "numero_oc": num_oc,
                             "solicitante": solicitante,
@@ -216,12 +220,11 @@ elif page == "🛒 Pedidos de Compra":
                             "valor_total": float(val_total)
                         }
                         
-                        # Construção do arquivo PDF em memória
+                        # Construção do PDF em memória
                         pdf_buffer = io.BytesIO()
                         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
                         styles = getSampleStyleSheet()
                         
-                        # Estilo personalizado para o documento Greenfield
                         style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
                         style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
                         
@@ -245,16 +248,16 @@ elif page == "🛒 Pedidos de Compra":
                     else:
                         st.error("Por favor, preencha todos os campos obrigatórios antes de gerar o PDF.")
 
-        # ---------------- PASSO 2: DOWNLOAD E ENVIO POR E-MAIL ----------------
+        # ---------------- PASSO 2: DOWNLOAD E ENVIO BLOQUEADO POR FORMULÁRIO ----------------
         elif st.session_state.oc_etapa == 2:
             st.subheader("✉️ Passo 2: Baixar Arquivo e Enviar para o Financeiro")
             dados = st.session_state.dados_oc
             
-            st.info(f"PDF Gerado com Sucesso para a OC {dados['numero_oc']}!")
+            st.success(f"📌 PDF Gerado para a OC {dados['numero_oc']}!")
             
-            # Botão de download nativo (Simula o salvamento local)
+            # O botão de download fica fora do form para funcionar nativamente
             st.download_button(
-                label="📥 Baixar PDF do Pedido (Salvar em Downloads)",
+                label="📥 Clique aqui para salvar na pasta Downloads",
                 data=st.session_state.pdf_pronto,
                 file_name=f"OC_{dados['numero_oc']}.pdf",
                 mime="application/pdf"
@@ -262,38 +265,85 @@ elif page == "🛒 Pedidos de Compra":
             
             st.markdown("---")
             
-            # Formulário de direcionamento de e-mail
-            email_fin = st.text_input("E-mail de Destino do Financeiro", value="financeiro@greenfield.com.br")
-            st.file_uploader("Confirme o anexo se desejar revisar o arquivo", type=["pdf"])
+            # Todo o envio e salvamento agora acontecem dentro deste formulário protetor
+            with st.form("f_envio_passo2"):
+                email_fin = st.text_input("E-mail de Destino do Financeiro", value="financeiro@greenfield.com.br")
+                st.file_uploader("Arraste o PDF baixado aqui para revisão (Opcional)", type=["pdf"])
+                
+                c_ab1, c_ab2 = st.columns(2)
+                
+                # Botão de Voltar simulado como cancelamento interno do form
+                voltar = c_ab1.form_submit_button("🔙 Voltar / Corrigir Dados")
+                confirmar = c_ab2.form_submit_button("🚀 Confirmar e Enviar para o Financeiro")
+                
+                if voltar:
+                    st.session_state.oc_etapa = 1
+                    st.rerun()
+                    
+                if confirmar:
+                    try:
+                        # 1. Salva na tabela pedidos_compra (Usando a coluna correta numero_oc que criamos no SQL)
+                        res1 = save_to_db("pedidos_compra", {
+                            "numero_oc": str(dados["numero_oc"]), 
+                            "solicitante": str(dados["solicitante"]), 
+                            "fornecedor": str(dados["fornecedor"]), 
+                            "valor_total": float(dados["valor_total"]), 
+                            "status": "Aberto"
+                        })
+                        
+                        # 2. Integra automaticamente gerando o lançamento no Contas a Pagar
+                        res2 = save_to_db("contas_pagar", {
+                            "fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", 
+                            "vencimento": str(datetime.today().date() + timedelta(days=15)), 
+                            "valor": float(dados["valor_total"]), 
+                            "status": "Pendente"
+                        })
+                        
+                        st.success(f"🔥 Sucesso! Pedido enviado para {email_fin} e registrado no histórico!")
+                        
+                        # Limpa os estados e força o reset completo da página
+                        st.session_state.oc_etapa = 1
+                        st.session_state.dados_oc = None
+                        st.session_state.pdf_pronto = None
+                        st.cache_resource.clear()
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Erro crítico no salvamento: {e}")
+
+    with aba2:
+        df = load_data("pedidos_compra")
+        if not df.empty:
+            df_vis = df.copy()
+            df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
             
-            c_ab1, c_ab2 = st.columns(2)
-            if c_ab1.button("🔙 Voltar / Corrigir Dados"):
-                st.session_state.oc_etapa = 1
-                st.rerun()
-                
-            if c_ab2.button("🚀 Confirmar e Enviar para o Financeiro"):
-                # Realiza a persistência das tabelas no banco de dados
-                save_to_db("pedidos_compra", {
-                    "numero_oc": dados["numero_oc"], 
-                    "solicitante": dados["solicitante"], 
-                    "fornecedor": dados["fornecedor"], 
-                    "valor_total": dados["valor_total"], 
-                    "status": "Aberto"
-                })
-                
-                save_to_db("contas_pagar", {
-                    "fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", 
-                    "vencimento": str(datetime.today().date() + timedelta(days=15)), 
-                    "valor": dados["valor_total"], 
-                    "status": "Pendente"
-                })
-                
-                st.success(f"✅ Pedido disparado com sucesso para {email_fin} e provisionado no Contas a Pagar!")
-                
-                # Limpa os estados de sessão e retorna ao passo 1
-                st.session_state.oc_etapa = 1
-                del st.session_state.dados_oc
-                del st.session_state.pdf_pronto
+            # Garante que mostre as colunas certas no histórico limpo
+            colunas_existentes = [c for c in ['numero_oc', 'solicitante', 'fornecedor', 'valor_total', 'status'] if c in df_vis.columns]
+            st.dataframe(df_vis[colunas_existentes], use_container_width=True, hide_index=True)
+        else: 
+            st.info("Nenhum pedido localizado no histórico.")
+
+    with aba3:
+        df_ger = load_data("pedidos_compra")
+        if not df_ger.empty:
+            df_ger['valor_total'] = df_ger['valor_total'].astype(float)
+            mudancas = st.data_editor(
+                df_ger, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                hide_index=True, 
+                key="edit_pc",
+                column_config={
+                    "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f")
+                }
+            )
+            if st.button("💾 Sincronizar Pedidos"):
+                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
+                    supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
+                for idx, row in mudancas.iterrows():
+                    supabase.table("pedidos_compra").update({"numero_oc": str(row['numero_oc']), "solicitante": str(row['solicitante']), "fornecedor": str(row['fornecedor']), "valor_total": float(row['valor_total']), "status": str(row['status'])}).eq("id", row['id']).execute()
+                st.success("Alterações salvas!")
                 st.cache_resource.clear()
                 st.rerun()
 # ===================== 4. ACORDOS JUDICIAIS =====================

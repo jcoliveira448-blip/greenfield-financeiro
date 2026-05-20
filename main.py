@@ -180,7 +180,7 @@ elif page == "💳 Contas a Pagar":
                 st.cache_resource.clear()
                 st.rerun()
 
-# ===================== 3. PEDIDOS DE COMPRA (COM ENVIO REAL DE E-MAIL E ANEXO) =====================
+# ===================== 3. PEDIDOS DE COMPRA (CORRIGIDO E SEGURO) =====================
 elif page == "🛒 Pedidos de Compra":
     st.title("🛒 Ordens de Compra (OC)")
     aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -196,7 +196,6 @@ elif page == "🛒 Pedidos de Compra":
         from email.mime.base import MIMEBase
         from email import encoders
 
-        # Inicializa o controle de etapas
         if "oc_etapa" not in st.session_state:
             st.session_state.oc_etapa = 1
         if "dados_oc" not in st.session_state:
@@ -204,7 +203,7 @@ elif page == "🛒 Pedidos de Compra":
         if "pdf_pronto" not in st.session_state:
             st.session_state.pdf_pronto = None
 
-        # ---------------- PASSO 1: ENTRADA DE DADOS E GERAÇÃO ----------------
+        # ---------------- PASSO 1: ENTRADA DE DADOS ----------------
         if st.session_state.oc_etapa == 1:
             st.subheader("📋 Passo 1: Informações da Ordem de Compra")
             with st.form("f_pedido_passo1"):
@@ -218,13 +217,12 @@ elif page == "🛒 Pedidos de Compra":
                 if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
                     if num_oc and forn and val_total > 0:
                         st.session_state.dados_oc = {
-                            "numero_oc": num_oc,
-                            "solicitante": solicitante,
-                            "fornecedor": forn,
+                            "numero_oc": str(num_oc),
+                            "solicitante": str(solicitante),
+                            "fornecedor": str(forn),
                             "valor_total": float(val_total)
                         }
                         
-                        # Construção do PDF na memória
                         pdf_buffer = io.BytesIO()
                         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
                         styles = getSampleStyleSheet()
@@ -250,9 +248,9 @@ elif page == "🛒 Pedidos de Compra":
                         st.session_state.oc_etapa = 2
                         st.rerun()
                     else:
-                        st.error("Por favor, preencha os campos obrigatórios.")
+                        st.error("Por favor, preencha todos os campos obrigatórios.")
 
-        # ---------------- PASSO 2: DOWNLOAD E ENVIO COMPLETO ----------------
+        # ---------------- PASSO 2: SALVAMENTO E DISPARO DE E-MAIL ----------------
         elif st.session_state.oc_etapa == 2:
             st.subheader("✉️ Passo 2: Baixar Arquivo e Enviar para o Financeiro")
             dados = st.session_state.dados_oc
@@ -270,7 +268,7 @@ elif page == "🛒 Pedidos de Compra":
             
             with st.form("f_envio_passo2"):
                 email_fin = st.text_input("E-mail de Destino do Financeiro", value="financeiro@greenfield.com.br")
-                st.write("ℹ️ O PDF gerado no Passo 1 será anexado automaticamente a este envio.")
+                st.write("ℹ️ O PDF gerado será anexado de forma automatizada ao e-mail enviado.")
                 
                 c_ab1, c_ab2 = st.columns(2)
                 voltar = c_ab1.form_submit_button("🔙 Voltar / Corrigir Dados")
@@ -282,11 +280,11 @@ elif page == "🛒 Pedidos de Compra":
                     
                 if confirmar:
                     try:
-                        # 1. SALVAMENTO NO SUPABASE (BANCO DE DADOS)
+                        # 1. SALVAR NO SUPABASE
                         save_to_db("pedidos_compra", {
-                            "numero_oc": str(dados["numero_oc"]), 
-                            "solicitante": str(dados["solicitante"]), 
-                            "fornecedor": str(dados["fornecedor"]), 
+                            "numero_oc": dados["numero_oc"], 
+                            "solicitante": dados["solicitante"], 
+                            "fornecedor": dados["fornecedor"], 
                             "valor_total": float(dados["valor_total"]), 
                             "status": "Aberto"
                         })
@@ -298,7 +296,7 @@ elif page == "🛒 Pedidos de Compra":
                             "status": "Pendente"
                         })
 
-                        # 2. DISPARO REAL DE E-MAIL COM ANEXO USANDO OS SECRETS
+                        # 2. DISPARAR EMAIL
                         if "email" in st.secrets:
                             cfg = st.secrets["email"]
                             
@@ -310,36 +308,34 @@ elif page == "🛒 Pedidos de Compra":
                             corpo_email = f"""
                             Prezado Financeiro,
                             
-                            Segue em anexo a nova Ordem de Compra emitida pelo sistema Greenfield.
+                            Segue anexa a nova Ordem de Compra gerada pelo ERP corporativo Greenfield.
                             
                             - Número da OC: {dados['numero_oc']}
                             - Solicitante: {dados['solicitante']}
                             - Fornecedor: {dados['fornecedor']}
                             - Valor Total: {formatar_moeda_br(dados['valor_total'])}
                             
-                            O lançamento já foi provisionado automaticamente no módulo Contas a Pagar.
+                            Esta despesa foi provisionada automaticamente no fluxo de Contas a Pagar.
                             """
                             msg.attach(MIMEText(corpo_email, 'plain'))
                             
-                            # Adiciona o PDF gerado como anexo físico na mensagem
                             part = MIMEBase('application', "octet-stream")
                             part.set_payload(st.session_state.pdf_pronto)
                             encoders.encode_base64(part)
                             part.add_header('Content-Disposition', f'attachment; filename="OC_{dados["numero_oc"]}.pdf"')
                             msg.attach(part)
                             
-                            # Conexão com o servidor de e-mail SMTP
-                            server = smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"])
+                            server = smtplib.SMTP(cfg["smtp_server"], int(cfg["smtp_port"]))
                             server.starttls()
                             server.login(cfg["remetente"], cfg["senha"])
                             server.sendmail(cfg["remetente"], email_fin, msg.as_string())
                             server.quit()
                             
-                            st.success(f"🔥 Sucesso! Pedido enviado para {email_fin} e registrado no histórico!")
+                            st.success(f"🔥 Sucesso absoluto! Pedido enviado para {email_fin} e registrado no histórico!")
                         else:
-                            st.warning("Banco atualizado, mas o e-mail não pôde ser enviado porque os dados do remetente não foram configurados nos Secrets do Streamlit.")
+                            st.warning("Banco de dados atualizado, mas remetente de e-mail não configurado.")
 
-                        # Reset de sessão
+                        # Reseta as etapas para novas OCs
                         st.session_state.oc_etapa = 1
                         st.session_state.dados_oc = None
                         st.session_state.pdf_pronto = None
@@ -347,7 +343,7 @@ elif page == "🛒 Pedidos de Compra":
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"Erro no processamento: {e}")
+                        st.error(f"Erro no processamento técnico: {e}")
 # ===================== 4. ACORDOS JUDICIAIS =====================
 elif page == "⚖️ Acordos Judiciais":
     st.title("⚖️ Controle de Acordos Judiciais")

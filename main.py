@@ -180,7 +180,7 @@ elif page == "💳 Contas a Pagar":
                 st.cache_resource.clear()
                 st.rerun()
 
-# ===================== 3. PEDIDOS DE COMPRA (FLUXO EM 2 PASSOS CORRIGIDO) =====================
+# ===================== 3. PEDIDOS DE COMPRA (COM ENVIO REAL DE E-MAIL E ANEXO) =====================
 elif page == "🛒 Pedidos de Compra":
     st.title("🛒 Ordens de Compra (OC)")
     aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -190,8 +190,13 @@ elif page == "🛒 Pedidos de Compra":
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         import io
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        from email.mime.base import MIMEBase
+        from email import encoders
 
-        # Inicializa o controle de etapas de forma segura
+        # Inicializa o controle de etapas
         if "oc_etapa" not in st.session_state:
             st.session_state.oc_etapa = 1
         if "dados_oc" not in st.session_state:
@@ -199,7 +204,7 @@ elif page == "🛒 Pedidos de Compra":
         if "pdf_pronto" not in st.session_state:
             st.session_state.pdf_pronto = None
 
-        # ---------------- PASSO 1: PREENCHIMENTO E GERADO DE PDF ----------------
+        # ---------------- PASSO 1: ENTRADA DE DADOS E GERAÇÃO ----------------
         if st.session_state.oc_etapa == 1:
             st.subheader("📋 Passo 1: Informações da Ordem de Compra")
             with st.form("f_pedido_passo1"):
@@ -212,7 +217,6 @@ elif page == "🛒 Pedidos de Compra":
                 
                 if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
                     if num_oc and forn and val_total > 0:
-                        # Salva firmemente no session_state
                         st.session_state.dados_oc = {
                             "numero_oc": num_oc,
                             "solicitante": solicitante,
@@ -220,7 +224,7 @@ elif page == "🛒 Pedidos de Compra":
                             "valor_total": float(val_total)
                         }
                         
-                        # Construção do PDF em memória
+                        # Construção do PDF na memória
                         pdf_buffer = io.BytesIO()
                         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
                         styles = getSampleStyleSheet()
@@ -246,16 +250,15 @@ elif page == "🛒 Pedidos de Compra":
                         st.session_state.oc_etapa = 2
                         st.rerun()
                     else:
-                        st.error("Por favor, preencha todos os campos obrigatórios antes de gerar o PDF.")
+                        st.error("Por favor, preencha os campos obrigatórios.")
 
-        # ---------------- PASSO 2: DOWNLOAD E ENVIO BLOQUEADO POR FORMULÁRIO ----------------
+        # ---------------- PASSO 2: DOWNLOAD E ENVIO COMPLETO ----------------
         elif st.session_state.oc_etapa == 2:
             st.subheader("✉️ Passo 2: Baixar Arquivo e Enviar para o Financeiro")
             dados = st.session_state.dados_oc
             
             st.success(f"📌 PDF Gerado para a OC {dados['numero_oc']}!")
             
-            # O botão de download fica fora do form para funcionar nativamente
             st.download_button(
                 label="📥 Clique aqui para salvar na pasta Downloads",
                 data=st.session_state.pdf_pronto,
@@ -265,14 +268,11 @@ elif page == "🛒 Pedidos de Compra":
             
             st.markdown("---")
             
-            # Todo o envio e salvamento agora acontecem dentro deste formulário protetor
             with st.form("f_envio_passo2"):
                 email_fin = st.text_input("E-mail de Destino do Financeiro", value="financeiro@greenfield.com.br")
-                st.file_uploader("Arraste o PDF baixado aqui para revisão (Opcional)", type=["pdf"])
+                st.write("ℹ️ O PDF gerado no Passo 1 será anexado automaticamente a este envio.")
                 
                 c_ab1, c_ab2 = st.columns(2)
-                
-                # Botão de Voltar simulado como cancelamento interno do form
                 voltar = c_ab1.form_submit_button("🔙 Voltar / Corrigir Dados")
                 confirmar = c_ab2.form_submit_button("🚀 Confirmar e Enviar para o Financeiro")
                 
@@ -282,8 +282,8 @@ elif page == "🛒 Pedidos de Compra":
                     
                 if confirmar:
                     try:
-                        # 1. Salva na tabela pedidos_compra (Usando a coluna correta numero_oc que criamos no SQL)
-                        res1 = save_to_db("pedidos_compra", {
+                        # 1. SALVAMENTO NO SUPABASE (BANCO DE DADOS)
+                        save_to_db("pedidos_compra", {
                             "numero_oc": str(dados["numero_oc"]), 
                             "solicitante": str(dados["solicitante"]), 
                             "fornecedor": str(dados["fornecedor"]), 
@@ -291,17 +291,55 @@ elif page == "🛒 Pedidos de Compra":
                             "status": "Aberto"
                         })
                         
-                        # 2. Integra automaticamente gerando o lançamento no Contas a Pagar
-                        res2 = save_to_db("contas_pagar", {
+                        save_to_db("contas_pagar", {
                             "fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", 
                             "vencimento": str(datetime.today().date() + timedelta(days=15)), 
                             "valor": float(dados["valor_total"]), 
                             "status": "Pendente"
                         })
-                        
-                        st.success(f"🔥 Sucesso! Pedido enviado para {email_fin} e registrado no histórico!")
-                        
-                        # Limpa os estados e força o reset completo da página
+
+                        # 2. DISPARO REAL DE E-MAIL COM ANEXO USANDO OS SECRETS
+                        if "email" in st.secrets:
+                            cfg = st.secrets["email"]
+                            
+                            msg = MIMEMultipart()
+                            msg['From'] = cfg["remetente"]
+                            msg['To'] = email_fin
+                            msg['Subject'] = f"Nova Ordem de Compra Registrada - OC {dados['numero_oc']}"
+                            
+                            corpo_email = f"""
+                            Prezado Financeiro,
+                            
+                            Segue em anexo a nova Ordem de Compra emitida pelo sistema Greenfield.
+                            
+                            - Número da OC: {dados['numero_oc']}
+                            - Solicitante: {dados['solicitante']}
+                            - Fornecedor: {dados['fornecedor']}
+                            - Valor Total: {formatar_moeda_br(dados['valor_total'])}
+                            
+                            O lançamento já foi provisionado automaticamente no módulo Contas a Pagar.
+                            """
+                            msg.attach(MIMEText(corpo_email, 'plain'))
+                            
+                            # Adiciona o PDF gerado como anexo físico na mensagem
+                            part = MIMEBase('application', "octet-stream")
+                            part.set_payload(st.session_state.pdf_pronto)
+                            encoders.encode_base64(part)
+                            part.add_header('Content-Disposition', f'attachment; filename="OC_{dados["numero_oc"]}.pdf"')
+                            msg.attach(part)
+                            
+                            # Conexão com o servidor de e-mail SMTP
+                            server = smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"])
+                            server.starttls()
+                            server.login(cfg["remetente"], cfg["senha"])
+                            server.sendmail(cfg["remetente"], email_fin, msg.as_string())
+                            server.quit()
+                            
+                            st.success(f"🔥 Sucesso! Pedido enviado para {email_fin} e registrado no histórico!")
+                        else:
+                            st.warning("Banco atualizado, mas o e-mail não pôde ser enviado porque os dados do remetente não foram configurados nos Secrets do Streamlit.")
+
+                        # Reset de sessão
                         st.session_state.oc_etapa = 1
                         st.session_state.dados_oc = None
                         st.session_state.pdf_pronto = None
@@ -309,43 +347,7 @@ elif page == "🛒 Pedidos de Compra":
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"Erro crítico no salvamento: {e}")
-
-    with aba2:
-        df = load_data("pedidos_compra")
-        if not df.empty:
-            df_vis = df.copy()
-            df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-            
-            # Garante que mostre as colunas certas no histórico limpo
-            colunas_existentes = [c for c in ['numero_oc', 'solicitante', 'fornecedor', 'valor_total', 'status'] if c in df_vis.columns]
-            st.dataframe(df_vis[colunas_existentes], use_container_width=True, hide_index=True)
-        else: 
-            st.info("Nenhum pedido localizado no histórico.")
-
-    with aba3:
-        df_ger = load_data("pedidos_compra")
-        if not df_ger.empty:
-            df_ger['valor_total'] = df_ger['valor_total'].astype(float)
-            mudancas = st.data_editor(
-                df_ger, 
-                use_container_width=True, 
-                num_rows="dynamic", 
-                hide_index=True, 
-                key="edit_pc",
-                column_config={
-                    "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f")
-                }
-            )
-            if st.button("💾 Sincronizar Pedidos"):
-                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
-                    supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
-                for idx, row in mudancas.iterrows():
-                    supabase.table("pedidos_compra").update({"numero_oc": str(row['numero_oc']), "solicitante": str(row['solicitante']), "fornecedor": str(row['fornecedor']), "valor_total": float(row['valor_total']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                st.success("Alterações salvas!")
-                st.cache_resource.clear()
-                st.rerun()
+                        st.error(f"Erro no processamento: {e}")
 # ===================== 4. ACORDOS JUDICIAIS =====================
 elif page == "⚖️ Acordos Judiciais":
     st.title("⚖️ Controle de Acordos Judiciais")

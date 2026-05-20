@@ -194,11 +194,11 @@ elif page == "🛒 Pedidos de Compra":
     else:
         st.info("Nenhum pedido de compra cadastrado.")
 
-# 4. ACORDOS JUDICIAIS (COM PARCELAMENTO AUTOMÁTICO E DATAS FORMATADAS)
+# 4. ACORDOS JUDICIAIS (COM CORREÇÃO DE DATA, EDIÇÃO E EXCLUSÃO)
 elif page == "⚖️ Acordos Judiciais":
     st.title("⚖️ Controle de Acordos Judiciais")
     
-    aba1, aba2 = st.tabs(["Firmar Novo Acordo", "Histórico de Parcelas"])
+    aba1, aba2, aba3 = st.tabs(["Firmar Novo Acordo", "📊 Histórico de Parcelas", "⚙️ Gerenciar / Excluir"])
     
     with aba1:
         with st.form("f_judicial"):
@@ -209,7 +209,9 @@ elif page == "⚖️ Acordos Judiciais":
             j3, j4, j5 = st.columns(3)
             val_total = j3.number_input("Valor Total do Acordo (R$)", min_value=1.00, format="%.2f")
             qtd_parc = j4.number_input("Quantidade de Parcelas", min_value=1, max_value=48, value=1)
-            data_ini = j5.date_input("Vencimento da 1ª Parcela", value=datetime.today())
+            
+            # Aqui garantimos que o componente use o padrão local de exibição
+            data_ini = j5.date_input("Vencimento da 1ª Parcela", value=datetime.today(), format="DD/MM/YYYY")
             
             if st.form_submit_button("🤝 Gerar Acordo e Cronograma"):
                 if proc and rec and val_total > 0:
@@ -222,53 +224,111 @@ elif page == "⚖️ Acordos Judiciais":
                         "status": "Em andamento"
                     })
                     
-                    # Se o banco retornou sucesso (mesmo se for UUID ou ID sequencial)
                     if acordo:
-                        # Captura o ID gerado pelo Supabase de forma segura
                         acordo_id = acordo[0]['id']
                         valor_parcela = float(val_total) / int(qtd_parc)
                         
                         erro_parcela = False
-                        # 2. Loop de Parcelamento Automático
+                        # 2. Loop de Parcelamento Automático (Salvando no formato que o banco exige YYYY-MM-DD)
                         for i in range(1, int(qtd_parc) + 1):
+                            # Adiciona 30 dias para cada parcela subsequente
                             venc_parcela = data_ini + timedelta(days=(i-1)*30)
                             
                             res_parc = save_to_db("parcelas_acordo", {
                                 "acordo_id": acordo_id,
                                 "numero_parcela": i,
                                 "valor_parcela": valor_parcela,
-                                "vencimento": str(venc_parcela), # Salva no formato do banco (YYYY-MM-DD)
+                                "vencimento": venc_parcela.strftime('%Y-%m-%d'), # Formato do Banco
                                 "status": "Pendente"
                             })
                             if res_parc is None:
                                 erro_parcela = True
                         
                         if not erro_parcela:
-                            st.success(f"Acordo fechado! {qtd_parc} parcelas calculadas e salvas na nuvem.")
+                            st.success(f"✅ Acordo firmado com sucesso! {qtd_parc} parcelas geradas.")
                             st.rerun()
                         else:
-                            st.warning("O acordo foi criado, mas houve um problema ao gerar as parcelas no banco. Verifique as permissões da tabela 'parcelas_acordo'.")
+                            st.warning("O acordo principal foi criado, mas houve uma falha nas parcelas. Verifique o RLS no Supabase.")
 
     with aba2:
         df_visualizacao = load_data("parcelas_acordo")
         if not df_visualizacao.empty:
-            st.subheader("Cronograma Geral de Pagamentos Judiciais")
+            st.subheader("Cronograma Geral de Pagamentos")
             
-            # Ajuste de Formato de Data para o padrão Brasileiro (DD/MM/YYYY)
+            # Formata a exibição da data para o usuário como DD/MM/YYYY
             if 'vencimento' in df_visualizacao.columns:
                 try:
-                    df_visualizacao['vencimento'] = pd.to_datetime(df_visualizacao['vencimento']).dt.strftime('%d/%m/%Y')
+                    df_visualizacao['vencimento_pt'] = pd.to_datetime(df_visualizacao['vencimento']).dt.strftime('%d/%m/%Y')
                 except Exception:
-                    pass # Caso já esteja formatado ou dê erro de conversão
+                    df_visualizacao['vencimento_pt'] = df_visualizacao['vencimento']
             
-            # Formatação visual dos valores em R$
-            if 'valor_parcela' in df_visualizacao.columns:
-                df_visualizacao['valor_parcela'] = df_visualizacao['valor_parcela'].map('R$ {:,.2f}'.format)
-
-            st.data_editor(df_visualizacao, use_container_width=True, hide_index=True)
+            # Organiza as colunas para exibição limpa
+            colunas_exibicao = ['numero_parcela', 'valor_parcela', 'vencimento_pt', 'status']
+            colunas_existentes = [c for c in colunas_exibicao if c in df_visualizacao.columns]
+            
+            st.dataframe(
+                df_visualizacao[colunas_existentes].rename(columns={
+                    'numero_parcela': 'Parcela',
+                    'valor_parcela': 'Valor',
+                    'vencimento_pt': 'Vencimento',
+                    'status': 'Status'
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
         else:
             st.info("Nenhuma parcela gerada no sistema ainda.")
 
+    with aba3:
+        st.subheader("🛠️ Editar ou Excluir Registros")
+        st.markdown("Use esta tabela para alterar o Status, Valores ou **Excluir** linhas selecionando-as e apertando `Delete` no seu teclado.")
+        
+        df_gerenciar = load_data("parcelas_acordo")
+        if not df_gerenciar.empty:
+            # O data_editor permite que você clique e edite qualquer campo diretamente na tela!
+            mudancas = st.data_editor(
+                df_gerenciar,
+                use_container_width=True,
+                num_rows="dynamic", # Permite que você delete linhas selecionando e apertando Delete
+                hide_index=True,
+                key="editor_parcelas"
+            )
+            
+            # Botão para salvar as alterações de edição ou exclusão de volta no Supabase
+            if st.button("💾 Salvar Alterações / Exclusões"):
+                if supabase:
+                    try:
+                        # Para fins de simplificação na nuvem, reiniciamos a sincronização limpa do que foi alterado
+                        # Se você deletou linhas no componente, precisamos deletar no banco.
+                        # O jeito mais seguro de sincronizar o estado atual editado na tela:
+                        id_na_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                        
+                        # Identifica o que foi deletado (o que tinha antes e não está mais na tela)
+                        id_originais = df_gerenciar['id'].tolist()
+                        deletados = [id_orig_item for id_orig_item in id_originais if id_orig_item not in id_na_tela]
+                        
+                        # 1. Processa Exclusões no banco
+                        for id_del in deletados:
+                            supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
+                            
+                        # 2. Processa Edições/Atualizações das linhas que ficaram
+                        for index, row in mudancas.iterrows():
+                            # Atualiza cada linha no Supabase baseando-se no ID dela
+                            dados_linha = {
+                                "numero_parcela": int(row['numero_parcela']),
+                                "valor_parcela": float(row['valor_parcela']),
+                                "vencimento": str(row['vencimento']),
+                                "status": str(row['status'])
+                            }
+                            supabase.table("parcelas_acordo").update(dados_linha).eq("id", row['id']).execute()
+                            
+                        st.success("🔄 Banco de dados atualizado com sucesso!")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao sincronizar edições: {e}")
+        else:
+            st.info("Nenhum dado disponível para gerenciamento.")
 # 5. SALÁRIOS E FOLHA DE PAGAMENTO
 elif page == "👥 Salários":
     st.title("👥 Gestão de Custos com Pessoal")

@@ -282,7 +282,7 @@ if page is not None:
                     if st.form_submit_button("🚀 Inserir Medição e Atualizar Saldo"):
                         if nova_ordem and novo_valor > 0:
                             save_to_db("medicoes_caixa", {"ordem": str(nova_ordem), "valor": float(novo_valor), "data_medicao": str(nova_data)})
-                            st.success("Saldo atualizado com sucesso!")
+                            st.success("Saldo updated com sucesso!")
                             st.cache_resource.clear()
                             st.rerun()
 
@@ -330,7 +330,7 @@ if page is not None:
                         st.cache_resource.clear()
                         st.rerun()
 
-        # ===================== 3. PEDIDOS DE COMPRA (COM OBSERVAÇÕES E CORREÇÕES) =====================
+        # ===================== 3. PEDIDOS DE COMPRA =====================
         elif page == "🛒 Pedidos de Compra":
             st.title("🛒 Ordens de Compra (OC)")
             aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -355,7 +355,6 @@ if page is not None:
                         forn = cc3.text_input("Fornecedor")
                         val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                         
-                        # CAMPO RECUPERADO: OBSERVAÇÕES
                         obs = st.text_area("Observações / Condições Especiais", help="Adicione aqui condições de pagamento, prazos ou mensagens importantes.")
                         
                         if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
@@ -414,7 +413,6 @@ if page is not None:
                         st.session_state.oc_etapa = 1
                         st.rerun()
                     if c_ab2.button("💾 Salvar Pedido no Histórico"):
-                        # Correção completa das chaves de banco de dados
                         save_to_db("pedidos_compra", {
                             "oc_numero": str(dados["oc_numero"]), 
                             "solicitante": str(dados["solicitante"]), 
@@ -442,9 +440,4 @@ if page is not None:
                     df_vis = df.copy()
                     if 'valor_total' in df_vis.columns:
                         df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
-                    st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhum pedido registrado no histórico.")
-
-            with aba3
+                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c

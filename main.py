@@ -29,13 +29,33 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Estilização CSS customizada para reduzir o tamanho dos títulos solicitados
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: #062618 !important; }
         [data-testid="stSidebar"] * { color: #ffffff !important; }
+        
+        /* Redução dos títulos principais solicitados */
+        h1 {
+            font-size: 24px !important;
+            font-weight: 700 !important;
+        }
+        h2 {
+            font-size: 20px !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Ajuste específico para os rótulos e valores dos cards de métricas */
+        [data-testid="stMetricLabel"] {
+            font-size: 14px !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 22px !important;
+        }
+        
         .stMetric {
             background-color: #f4f7f5;
-            padding: 15px;
+            padding: 12px;
             border-radius: 10px;
             border-left: 5px solid #0b4d32;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
@@ -75,12 +95,31 @@ def formatar_data_br(dt_str):
     except Exception:
         return dt_str
 
+# Função auxiliar para calcular o 5º dia útil do mês seguinte (para provisionamento da folha)
+def calcular_quinto_dia_util_mes_seguinte():
+    hoje = datetime.today()
+    # Vai para o primeiro dia do mês seguinte
+    if hoje.month == 12:
+        proximo_mes = datetime(hoje.year + 1, 1, 1)
+    else:
+        proximo_mes = datetime(hoje.year, hoje.month + 1, 1)
+    
+    dias_uteis = 0
+    data_alvo = proximo_mes
+    while dias_uteis < 5:
+        # 5 = Sábado, 6 = Domingo
+        if data_alvo.weekday() < 5:
+            dias_uteis += 1
+        if dias_uteis < 5:
+            data_alvo += timedelta(days=1)
+    return data_alvo.date()
+
 # ===================== CÁLCULO DINÂMICO DE SALDO =====================
 df_medicoes_global = load_data("medicoes_caixa")
 if not df_medicoes_global.empty and 'valor' in df_medicoes_global.columns:
     saldo_projetado_caixa = df_medicoes_global['valor'].astype(float).sum()
 else:
-    saldo_projetado_caixa = 0.00  # Começa rigorosamente zerado
+    saldo_projetado_caixa = 0.00  # Inicia estritamente zerado conforme preferência
 
 # ===================== SIDEBAR NAVEGAÇÃO =====================
 with st.sidebar:
@@ -142,9 +181,9 @@ elif page == "💳 Contas a Pagar & Caixa":
     
     aba_caixa, aba_lancar, aba_gerenciar = st.tabs(["📊 Saldo & Medições", "📋 Lançar Nova Conta", "🛠️ Gerenciar Contas"])
     
-    # --- ABA CAIXA E MEDIÇÕES (AGORA EDITÁVEL) ---
+    # --- ABA CAIXA E MEDIÇÕES ---
     with aba_caixa:
-        st.subheader("Saldo Projetado de Caixa (Fluxo de Receitas)")
+        st.subheader("Saldo Projetado de Caixa")
         st.metric(label="Saldo Atual Acumulado", value=formatar_moeda_br(saldo_projetado_caixa))
         st.info("💡 Este saldo inicia em R$ 0,00. Adicione lançamentos de medições ou edite o histórico abaixo para ajustar o caixa.")
         
@@ -174,7 +213,6 @@ elif page == "💳 Contas a Pagar & Caixa":
         if not df_medicoes_global.empty:
             df_medicoes_global['valor'] = df_medicoes_global['valor'].astype(float)
             
-            # Tabela Interativa que permite EDITAR os valores das medições já salvas
             mudancas_med = st.data_editor(
                 df_medicoes_global,
                 use_container_width=True,
@@ -190,10 +228,8 @@ elif page == "💳 Contas a Pagar & Caixa":
             
             if st.button("💾 Salvar Alterações de Saldo/Medições"):
                 id_tela_med = mudancas_med['id'].tolist() if 'id' in mudancas_med.columns else []
-                # Remove do banco se o usuário deletar a linha na tela
                 for id_del in [x for x in df_medicoes_global['id'].tolist() if x not in id_tela_med]:
                     supabase.table("medicoes_caixa").delete().eq("id", id_del).execute()
-                # Atualiza caso mude o valor ou nome
                 for idx, row in mudancas_med.iterrows():
                     supabase.table("medicoes_caixa").update({
                         "ordem": str(row['ordem']),
@@ -425,11 +461,11 @@ elif page == "⚖️ Acordos Judiciais":
                 for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]: supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
                 for idx, row in mudancas.iterrows():
                     supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                st.success("Cronograma atualizado com sucesso!")
+                st.success("Cronograma updated!")
                 st.cache_resource.clear()
                 st.rerun()
 
-# ===================== 5. SALÁRIOS =====================
+# ===================== 5. SALÁRIOS (MÓDULO ATUALIZADO COM INTEGRAÇÃO AUTOMÁTICA) =====================
 elif page == "👥 Salários":
     st.title("👥 Gestão de Custos com Pessoal")
     aba1, aba2, aba3 = st.tabs(["Lançar Folha", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -447,8 +483,23 @@ elif page == "👥 Salários":
             
             if st.form_submit_button("📊 Lançar"):
                 if func and sal_base > 0:
-                    save_to_db("folha_pagamento", {"funcionario": func, "funcao": cargo, "salario_base": float(sal_base), "beneficios": float(beneficios), "descontos": float(descontos), "mes_referencia": mes_ref})
-                    st.success("Folha consolidada!")
+                    custo_liquido_folha = float(sal_base) + float(beneficios) - float(descontos)
+                    
+                    # 1. Salva no histórico do módulo de salários
+                    save_to_db("folha_pagamento", {
+                        "funcionario": func, "funcao": cargo, "salario_base": float(sal_base), "beneficios": float(beneficios), "descontos": float(descontos), "mes_referencia": mes_ref
+                    })
+                    
+                    # 2. Alimenta AUTOMATICAMENTE o histórico do Contas a Pagar (Vence no 5º dia útil do mês seguinte)
+                    vencimento_folha = calcular_quinto_dia_util_mes_seguinte()
+                    save_to_db("contas_pagar", {
+                        "fornecedor": f"Folha de Pagamento - {mes_ref} ({func})",
+                        "valor": custo_liquido_folha,
+                        "vencimento": str(vencimento_folha),
+                        "status": "Pendente"
+                    })
+                    
+                    st.success("Folha consolidada e provisionada automaticamente no Contas a Pagar!")
                     st.cache_resource.clear()
                     st.rerun()
 

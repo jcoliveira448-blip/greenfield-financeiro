@@ -163,6 +163,10 @@ else:
 
 # ===================== SIDEBAR CONTROLE DE ACESSO =====================
 with st.sidebar:
+    # Inclusão da Logo da Empresa carregada localmente de forma segura
+    if os.path.exists("logo.png"):
+        st.image("logo.png", use_container_width=True)
+        
     st.sidebar.markdown("# 💹 Greenfield")
     st.markdown("### ERP FINANCEIRO CORPORATIVO")
     st.markdown("---")
@@ -469,7 +473,7 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                                save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado e parcelas geradas!")
                             st.cache_resource.clear()
                             st.rerun()
@@ -508,7 +512,7 @@ if page is not None:
                         supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
                         supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
-                    st.success("Cronograma atualizado!")
+                    st.success("Cronograma updated!")
                     st.cache_resource.clear()
                     st.rerun()
 
@@ -570,7 +574,14 @@ if page is not None:
                     for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
                         supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
-                        supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
-                    st.success("Registros atualizados!")
+                        supabase.table("folha_pagamento").update({
+                            "funcionario": str(row['funcionario']),
+                            "funcao": str(row['funcao']),
+                            "salario_base": float(row['salario_base']),
+                            "beneficios": float(row['beneficios']),
+                            "descontos": float(row['descontos']),
+                            "mes_referencia": str(row['mes_referencia'])
+                        }).eq("id", row['id']).execute()
+                    st.success("Folha sincronizada!")
                     st.cache_resource.clear()
                     st.rerun()

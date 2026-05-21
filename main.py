@@ -29,13 +29,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS customizada para reduzir o tamanho dos títulos solicitados
+# Estilização CSS customizada
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: #062618 !important; }
         [data-testid="stSidebar"] * { color: #ffffff !important; }
         
-        /* Redução dos títulos principais solicitados */
         h1 {
             font-size: 24px !important;
             font-weight: 700 !important;
@@ -45,7 +44,6 @@ st.markdown("""
             font-weight: 600 !important;
         }
         
-        /* Ajuste específico para os rótulos e valores dos cards de métricas */
         [data-testid="stMetricLabel"] {
             font-size: 14px !important;
         }
@@ -95,7 +93,6 @@ def formatar_data_br(dt_str):
     except Exception:
         return dt_str
 
-# Função auxiliar para calcular o 5º dia útil do mês seguinte (para provisionamento da folha)
 def calcular_quinto_dia_util_mes_seguinte():
     hoje = datetime.today()
     if hoje.month == 12:
@@ -117,7 +114,7 @@ df_medicoes_global = load_data("medicoes_caixa")
 if not df_medicoes_global.empty and 'valor' in df_medicoes_global.columns:
     saldo_projetado_caixa = df_medicoes_global['valor'].astype(float).sum()
 else:
-    saldo_projetado_caixa = 0.00  # Inicia estritamente zerado conforme preferência
+    saldo_projetado_caixa = 0.00
 
 # ===================== SIDEBAR NAVEGAÇÃO =====================
 with st.sidebar:
@@ -131,10 +128,6 @@ with st.sidebar:
         "⚖️ Acordos Judiciais", 
         "👥 Salários"
     ])
-    
-    if st.button("🔄 Sincronizar Nuvem"):
-        st.cache_resource.clear()
-        st.rerun()
 
 # ===================== 1. DASHBOARD PRINCIPAL DINÂMICO =====================
 if page == "📊 Dashboard":
@@ -176,13 +169,11 @@ if page == "📊 Dashboard":
 # ===================== 2. CONTAS A PAGAR & GESTÃO DE CAIXA =====================
 elif page == "💳 Contas a Pagar & Caixa":
     st.title("💳 Contas a Pagar & Controle de Caixa")
-    
     aba_caixa, aba_lancar, aba_gerenciar = st.tabs(["📊 Saldo & Medições", "📋 Lançar Nova Conta", "🛠️ Gerenciar Contas"])
     
     with aba_caixa:
         st.subheader("Saldo Projetado de Caixa")
         st.metric(label="Saldo Atual Acumulado", value=formatar_moeda_br(saldo_projetado_caixa))
-        st.info("💡 Este saldo inicia em R$ 0,00. Adicione lançamentos de medições ou edite o histórico abaixo para ajustar o caixa.")
         
         st.markdown("---")
         st.subheader("📈 Registrar Nova Medição / Saldo Inicial")
@@ -194,11 +185,7 @@ elif page == "💳 Contas a Pagar & Caixa":
             
             if st.form_submit_button("🚀 Inserir Medição e Atualizar Saldo"):
                 if nova_ordem and novo_valor > 0:
-                    save_to_db("medicoes_caixa", {
-                        "ordem": str(nova_ordem),
-                        "valor": float(novo_valor),
-                        "data_medicao": str(nova_data)
-                    })
+                    save_to_db("medicoes_caixa", {"ordem": str(nova_ordem), "valor": float(novo_valor), "data_medicao": str(nova_data)})
                     st.success("Saldo atualizado na nuvem com sucesso!")
                     st.cache_resource.clear()
                     st.rerun()
@@ -209,40 +196,27 @@ elif page == "💳 Contas a Pagar & Caixa":
         st.subheader("📜 Histórico e Edição de Medições")
         if not df_medicoes_global.empty:
             df_medicoes_global['valor'] = df_medicoes_global['valor'].astype(float)
-            
             df_medicoes_exibir = df_medicoes_global.copy()
             if 'data_medicao' in df_medicoes_exibir.columns:
                 df_medicoes_exibir['data_medicao'] = pd.to_datetime(df_medicoes_exibir['data_medicao']).dt.date
 
             mudancas_med = st.data_editor(
-                df_medicoes_exibir,
-                use_container_width=True,
-                num_rows="dynamic",
-                hide_index=True,
-                key="edit_medicoes_caixa",
+                df_medicoes_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_medicoes_caixa",
                 column_config={
                     "valor": st.column_config.NumberColumn("Valor Recebido (R$)", format="R$ %.2f"),
                     "data_medicao": st.column_config.DateColumn("Data da Medição", format="DD/MM/YYYY"),
                     "ordem": st.column_config.TextColumn("Identificador / Ordem")
                 }
             )
-            
             if st.button("💾 Salvar Alterações de Saldo/Medições"):
                 id_tela_med = mudancas_med['id'].tolist() if 'id' in mudancas_med.columns else []
                 for id_del in [x for x in df_medicoes_global['id'].tolist() if x not in id_tela_med]:
                     supabase.table("medicoes_caixa").delete().eq("id", id_del).execute()
                 for idx, row in mudancas_med.iterrows():
-                    supabase.table("medicoes_caixa").update({
-                        "ordem": str(row['ordem']),
-                        "valor": float(row['valor']),
-                        "data_medicao": str(row['data_medicao'])
-                    }).eq("id", row['id']).execute()
-                
-                st.success("Histórico de caixa atualizado com sucesso!")
+                    supabase.table("medicoes_caixa").update({"ordem": str(row['ordem']), "valor": float(row['valor']), "data_medicao": str(row['data_medicao'])}).eq("id", row['id']).execute()
+                st.success("Histórico de caixa atualizado!")
                 st.cache_resource.clear()
                 st.rerun()
-        else:
-            st.info("Nenhuma medição cadastrada.")
 
     with aba_lancar:
         st.subheader("Cadastrar Despesa / Contas a Pagar")
@@ -252,38 +226,26 @@ elif page == "💳 Contas a Pagar & Caixa":
             valor = c2.number_input("Valor da Conta (R$)", min_value=0.00, format="%.2f")
             c3, c4 = st.columns(2)
             venc = c3.date_input("Data de Vencimento", value=datetime.today().date(), format="DD/MM/YYYY")
-            status = c4.selectbox("Status de Pagamento", ["Pendente", "Pago", "Atrasado"])
+            status_c = c4.selectbox("Status de Pagamento", ["Pendente", "Pago", "Atrasado"])
             
             if st.form_submit_button("💾 Salvar Conta"):
                 if forn and valor > 0:
-                    save_to_db("contas_pagar", {
-                        "fornecedor": forn,
-                        "valor": float(valor),
-                        "vencimento": str(venc),
-                        "status": status
-                    })
+                    save_to_db("contas_pagar", {"fornecedor": forn, "valor": float(valor), "vencimento": str(venc), "status": status_c})
                     st.success("Conta provisionada com sucesso!")
                     st.cache_resource.clear()
                     st.rerun()
-                else:
-                    st.error("Preencha todos os campos corretamente.")
 
     with aba_gerenciar:
         st.subheader("Gerenciamento Geral de Títulos")
         df_contas_ger = load_data("contas_pagar")
         if not df_contas_ger.empty:
             df_contas_ger['valor'] = df_contas_ger['valor'].astype(float)
-            
             df_contas_exibir = df_contas_ger.copy()
             if 'vencimento' in df_contas_exibir.columns:
                 df_contas_exibir['vencimento'] = pd.to_datetime(df_contas_exibir['vencimento']).dt.date
 
             mudancas_cp = st.data_editor(
-                df_contas_exibir,
-                use_container_width=True,
-                num_rows="dynamic",
-                hide_index=True,
-                key="edit_cp_geral",
+                df_contas_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_cp_geral",
                 column_config={
                     "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
                     "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
@@ -295,17 +257,10 @@ elif page == "💳 Contas a Pagar & Caixa":
                 for id_del in [x for x in df_contas_ger['id'].tolist() if x not in id_tela]:
                     supabase.table("contas_pagar").delete().eq("id", id_del).execute()
                 for idx, row in mudancas_cp.iterrows():
-                    supabase.table("contas_pagar").update({
-                        "fornecedor": str(row['fornecedor']),
-                        "valor": float(row['valor']),
-                        "vencimento": str(row['vencimento']),
-                        "status": str(row['status'])
-                    }).eq("id", row['id']).execute()
-                st.success("Tabela sincronizada com o banco!")
+                    supabase.table("contas_pagar").update({"fornecedor": str(row['fornecedor']), "valor": float(row['valor']), "vencimento": str(row['vencimento']), "status": str(row['status'])}).eq("id", row['id']).execute()
+                st.success("Tabela sincronizada!")
                 st.cache_resource.clear()
                 st.rerun()
-        else:
-            st.info("Nenhuma conta a pagar localizada.")
 
 # ===================== 3. PEDIDOS DE COMPRA =====================
 elif page == "🛒 Pedidos de Compra":
@@ -334,9 +289,7 @@ elif page == "🛒 Pedidos de Compra":
                 
                 if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
                     if num_oc and forn and val_total > 0:
-                        st.session_state.dados_oc = {
-                            "numero_oc": str(num_oc), "solicitante": str(solicitante), "fornecedor": str(forn), "valor_total": float(val_total)
-                        }
+                        st.session_state.dados_oc = {"numero_oc": str(num_oc), "solicitante": str(solicitante), "fornecedor": str(forn), "valor_total": float(val_total)}
                         pdf_buffer = io.BytesIO()
                         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
                         styles = getSampleStyleSheet()
@@ -362,34 +315,23 @@ elif page == "🛒 Pedidos de Compra":
         elif st.session_state.oc_etapa == 2:
             st.subheader("📥 Passo 2: Salvar Arquivo e Registrar no Sistema")
             dados = st.session_state.dados_oc
-            st.success(f"📌 PDF assinado digitalmente e gerado para a OC {dados['numero_oc']}!")
-            
-            st.download_button(label="📥 Clique aqui para salvar na pasta Downloads", data=st.session_state.pdf_pronto, file_name=f"OC_{dados['numero_oc']}.pdf", mime="application/pdf")
-            st.markdown("---")
+            st.success(f"📌 PDF gerado para a OC {dados['numero_oc']}!")
+            st.download_button(label="📥 Baixar PDF", data=st.session_state.pdf_pronto, file_name=f"OC_{dados['numero_oc']}.pdf", mime="application/pdf")
             
             with st.form("f_finalizar_pedido"):
                 c_ab1, c_ab2 = st.columns(2)
-                voltar = c_ab1.form_submit_button("🔙 Voltar / Corrigir Dados")
-                confirmar = c_ab2.form_submit_button("💾 Salvar Pedido no Histórico")
-                
-                if voltar:
+                if c_ab1.form_submit_button("🔙 Voltar"):
                     st.session_state.oc_etapa = 1
                     st.rerun()
-                if confirmar:
-                    try:
-                        save_to_db("pedidos_compra", {
-                            "oc_numero": str(dados["numero_oc"]), "numero_oc": str(dados["numero_oc"]), "solicitante": str(dados["solicitante"]), "fornecedor": str(dados["fornecedor"]), "valor_total": float(dados["valor_total"]), "status": "Aprovado"
-                        })
-                        save_to_db("contas_pagar", {
-                            "fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", "vencimento": str(datetime.today().date() + timedelta(days=15)), "valor": float(dados["valor_total"]), "status": "Pendente"
-                        })
-                        st.success("🔥 Ordem de Compra salva com integração!")
-                        st.session_state.oc_etapa = 1
-                        st.session_state.dados_oc = None
-                        st.session_state.pdf_pronto = None
-                        st.cache_resource.clear()
-                        st.rerun()
-                    except Exception as e: st.error(f"Erro: {e}")
+                if c_ab2.form_submit_button("💾 Salvar no Histórico"):
+                    save_to_db("pedidos_compra", {"oc_numero": str(dados["numero_oc"]), "numero_oc": str(dados["numero_oc"]), "solicitante": str(dados["solicitante"]), "fornecedor": str(dados["fornecedor"]), "valor_total": float(dados["valor_total"]), "status": "Aprovado"})
+                    save_to_db("contas_pagar", {"fornecedor": f"OC {dados['numero_oc']} - {dados['fornecedor']}", "vencimento": str(datetime.today().date() + timedelta(days=15)), "valor": float(dados["valor_total"]), "status": "Pendente"})
+                    st.success("Ordem de Compra integrada com sucesso!")
+                    st.session_state.oc_etapa = 1
+                    st.session_state.dados_oc = None
+                    st.session_state.pdf_pronto = None
+                    st.cache_resource.clear()
+                    st.rerun()
 
     with aba2:
         df = load_data("pedidos_compra")
@@ -397,10 +339,155 @@ elif page == "🛒 Pedidos de Compra":
             df_vis = df.copy()
             if 'oc_numero' in df_vis.columns and 'numero_oc' not in df_vis.columns: df_vis['numero_oc'] = df_vis['oc_numero']
             df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-            colunas_exibir = [c for c in ['numero_oc', 'solicitante', 'fornecedor', 'valor_total', 'status'] if c in df_vis.columns]
-            st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
+            st.dataframe(df_vis[['numero_oc', 'solicitante', 'fornecedor', 'valor_total', 'status']], use_container_width=True, hide_index=True)
 
     with aba3:
         df_ger = load_data("pedidos_compra")
         if not df_ger.empty:
             df_ger['valor_total'] = df_ger['valor_total'].astype(float)
+            mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_pc", column_config={"valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])})
+            if st.button("💾 Sincronizar Compras"):
+                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]: supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
+                for idx, row in mudancas.iterrows():
+                    supabase.table("pedidos_compra").update({"solicitante": str(row['solicitante']), "fornecedor": str(row['fornecedor']), "valor_total": float(row['valor_total']), "status": str(row['status']), "numero_oc": str(row.get('numero_oc', row.get('oc_numero')))}).eq("id", row['id']).execute()
+                st.cache_resource.clear()
+                st.rerun()
+
+# ===================== 4. ACORDOS JUDICIAIS =====================
+elif page == "⚖️ Acordos Judiciais":
+    st.title("⚖️ Controle de Acordos Judiciais")
+    aba1, aba2, aba3 = st.tabs(["Firmar Acordo", "📋 Histórico de Parcelas Completo", "🛠️ Gerenciar (Editar/Excluir)"])
+    
+    with aba1:
+        with st.form("f_judicial"):
+            j1, j2 = st.columns(2)
+            proc = j1.text_input("Número do Processo / Vara")
+            rec = j2.text_input("Nome do Reclamante")
+            j3, j4, j5 = st.columns(3)
+            val_total = j3.number_input("Valor Total do Acordo (R$)", min_value=1.00, format="%.2f")
+            qtd_parc = j4.number_input("Quantidade de Parcelas", min_value=1, max_value=48, value=1)
+            data_ini = j5.date_input("Vencimento da 1ª Parcela", value=datetime.today(), format="DD/MM/YYYY")
+            
+            if st.form_submit_button("🤝 Gerar Acordo e Cronograma"):
+                if proc and rec and val_total > 0:
+                    acordo = save_to_db("acordos_judiciais", {"processo": proc, "reclamante": rec, "valor_total": float(val_total), "qtd_parcelas": int(qtd_parc), "status": "Em andamento"})
+                    if acordo:
+                        acordo_id = acordo[0]['id']
+                        valor_parcela = float(val_total) / int(qtd_parc)
+                        for i in range(1, int(qtd_parc) + 1):
+                            venc_parcela = data_ini + timedelta(days=(i-1)*30)
+                            save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                        st.success("✅ Acordo firmado e parcelas geradas!")
+                        st.cache_resource.clear()
+                        st.rerun()
+
+    with aba2:
+        df_parc = load_data("parcelas_acordo")
+        df_acod = load_data("acordos_judiciais")
+        if not df_parc.empty and not df_acod.empty:
+            df_mestre = pd.merge(df_parc, df_acod, left_on="acordo_id", right_on="id", suffixes=('_parc', '_acord'))
+            df_mestre['valor_parcela'] = df_mestre['valor_parcela'].apply(formatar_moeda_br)
+            df_mestre['vencimento'] = df_mestre['vencimento'].apply(formatar_data_br)
+            df_exibir = df_mestre[['processo', 'reclamante', 'numero_parcela', 'valor_parcela', 'vencimento', 'status_parc']]
+            df_exibir.columns = ['Processo / Vara', 'Nome do Reclamante', 'Nº Parcela', 'Valor da Parcela', 'Data Vencimento', 'Status']
+            st.dataframe(df_exibir, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum acordo judicial registrado.")
+
+    with aba3:
+        st.subheader("Gerenciamento de Parcelas")
+        df_ger = load_data("parcelas_acordo")
+        if not df_ger.empty:
+            df_ger['valor_parcela'] = df_ger['valor_parcela'].astype(float)
+            df_ger_exibir = df_ger.copy()
+            if 'vencimento' in df_ger_exibir.columns:
+                df_ger_exibir['vencimento'] = pd.to_datetime(df_ger_exibir['vencimento']).dt.date
+
+            # Correção do column_config utilizando os nomes exatos das colunas (status_parc)
+            mudancas = st.data_editor(
+                df_ger_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_aj", 
+                column_config={
+                    "valor_parcela": st.column_config.NumberColumn("Valor da Parcela (R$)", format="R$ %.2f"),
+                    "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
+                    "status_parc": st.column_config.SelectboxColumn("Status", options=["Pendente", "Pago", "Atrasado"])
+                }
+            )
+            if st.button("💾 Sincronizar Cronograma Judicial"):
+                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
+                    supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
+                for idx, row in mudancas.iterrows():
+                    supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
+                st.success("Cronograma atualizado!")
+                st.cache_resource.clear()
+                st.rerun()
+        else:
+            st.info("Não há parcelas para gerenciar.")
+
+# ===================== 5. SALÁRIOS =====================
+elif page == "👥 Salários":
+    st.title("👥 Gestão de Custos com Pessoal")
+    aba1, aba2, aba3 = st.tabs(["Lançar Folha", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
+    
+    with aba1:
+        with st.form("f_folha"):
+            s1, s2 = st.columns(2)
+            func = s1.text_input("Nome do Colaborador")
+            cargo = s2.text_input("Função / Cargo")
+            s3, s4, s5 = st.columns(3)
+            sal_base = s3.number_input("Salário Base (R$)", min_value=0.00, format="%.2f")
+            beneficios = s4.number_input("Benefícios (R$)", min_value=0.00, format="%.2f")
+            descontos = s5.number_input("Descontos (R$)", min_value=0.00, format="%.2f")
+            mes_ref = st.selectbox("Mês de Referência", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
+            
+            if st.form_submit_button("📊 Lançar"):
+                if func and sal_base > 0:
+                    custo_liquido_folha = float(sal_base) + float(beneficios) - float(descontos)
+                    save_to_db("folha_pagamento", {"funcionario": func, "funcao": cargo, "salario_base": float(sal_base), "beneficios": float(beneficios), "descontos": float(descontos), "mes_referencia": mes_ref})
+                    
+                    vencimento_folha = calcular_quinto_dia_util_mes_seguinte()
+                    save_to_db("contas_pagar", {"fornecedor": f"Folha de Pagamento - {mes_ref} ({func})", "valor": custo_liquido_folha, "vencimento": str(vencimento_folha), "status": "Pendente"})
+                    
+                    st.success("Folha consolidada e provisionada automaticamente no Contas a Pagar!")
+                    st.cache_resource.clear()
+                    st.rerun()
+
+    with aba2:
+        df = load_data("folha_pagamento")
+        if not df.empty:
+            df_vis = df.copy()
+            df_vis['Custo Total'] = df_vis['salario_base'] + df_vis['beneficios'] - df_vis['descontos']
+            for col in ['salario_base', 'beneficios', 'descontos', 'Custo Total']:
+                df_vis[col] = df_vis[col].apply(formatar_moeda_br)
+            st.dataframe(df_vis[['funcionario', 'funcao', 'mes_referencia', 'salario_base', 'beneficios', 'descontos', 'Custo Total']], use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum registro de folha lançado.")
+
+    with aba3:
+        df_ger = load_data("folha_pagamento")
+        if not df_ger.empty:
+            df_ger['salario_base'] = df_ger['salario_base'].astype(float)
+            df_ger['beneficios'] = df_ger['beneficios'].astype(float)
+            df_ger['descontos'] = df_ger['descontos'].astype(float)
+            
+            mudancas = st.data_editor(
+                df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_sl",
+                column_config={
+                    "salario_base": st.column_config.NumberColumn("Salário Base (R$)", format="R$ %.2f"),
+                    "beneficios": st.column_config.NumberColumn("Benefícios (R$)", format="R$ %.2f"),
+                    "descontos": st.column_config.NumberColumn("Descontos (R$)", format="R$ %.2f"),
+                    "mes_referencia": st.column_config.SelectboxColumn("Mês Ref", options=["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
+                }
+            )
+            if st.button("💾 Sincronizar Folha"):
+                id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
+                    supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
+                for idx, row in mudancas.iterrows():
+                    supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
+                st.success("Registros atualizados!")
+                st.cache_resource.clear()
+                st.rerun()
+        else:
+            st.info("Não há registros de folha para gerenciar.")

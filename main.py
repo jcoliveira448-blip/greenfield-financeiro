@@ -163,7 +163,6 @@ else:
 
 # ===================== SIDEBAR CONTROLE DE ACESSO =====================
 with st.sidebar:
-    # Inclusão da Logo da Empresa carregada localmente de forma segura
     if os.path.exists("logo.png"):
         st.image("logo.png", use_container_width=True)
         
@@ -177,7 +176,6 @@ with st.sidebar:
         paginas_disponiveis = ["🛒 Pedidos de Compra"]
         st.sidebar.success("Acesso: Módulo Compras")
         
-        # DISPONIBILIZAÇÃO DO MANUAL EM PDF NA BARRA LATERAL (CORRIGIDO)
         st.markdown("---")
         st.markdown("### 📚 Central de Ajuda")
         manual_pdf = gerar_pdf_manual()
@@ -338,7 +336,6 @@ if page is not None:
                     forn = cc3.text_input("Fornecedor")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
-                    # NOVO CAMPO: OBSERVAÇÕES DA ORDEM DE COMPRA
                     obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
                     
                     if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
@@ -357,8 +354,9 @@ if page is not None:
                             style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
                             style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
                             
+                            # AJUSTE DA ESTRUTURA VISUAL DA OC SOLICITADO AQUI
                             story = [
-                                Paragraph(f"<b>GREENFIELD Engenharia - Ordem de Compra Nº {num_oc}</b>", style_titulo),
+                                Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra</b>", style_titulo),
                                 Spacer(1, 15),
                                 Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
                                 Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
@@ -369,7 +367,10 @@ if page is not None:
                                 story.append(Spacer(1, 10))
                                 story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
                                 
+                            # Número da OC deslocado estrategicamente para a parte inferior em sequência fluida
                             story.extend([
+                                Spacer(1, 20),
+                                Paragraph(f"<b>N° {num_oc}</b>", style_corpo),
                                 Spacer(1, 30),
                                 Paragraph("____________________________________________", style_corpo),
                                 Paragraph("Assinatura do Departamento de Suprimentos / DP", style_corpo)
@@ -395,7 +396,6 @@ if page is not None:
                     st.session_state.oc_etapa = 1
                     st.rerun()
                 if c_ab2.button("💾 Salvar Pedido no Histórico"):
-                    # Incluindo a coluna de observacoes no payload enviado ao Supabase
                     save_to_db("pedidos_compra", {
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
@@ -473,7 +473,7 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado e parcelas geradas!")
                             st.cache_resource.clear()
                             st.rerun()
@@ -582,6 +582,6 @@ if page is not None:
                             "descontos": float(row['descontos']),
                             "mes_referencia": str(row['mes_referencia'])
                         }).eq("id", row['id']).execute()
-                    st.success("Folha sincronizada!")
+                    st.success("Folha atualizada!")
                     st.cache_resource.clear()
                     st.rerun()

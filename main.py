@@ -33,27 +33,31 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS customizada
+# Estilização CSS customizada corrigida para botões da sidebar
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: #062618 !important; }
         [data-testid="stSidebar"] * { color: #ffffff !important; }
         
-        h1 {
-            font-size: 24px !important;
-            font-weight: 700 !important;
-        }
-        h2 {
-            font-size: 20px !important;
+        /* Correção para o botão de download na sidebar não ficar invisível */
+        [data-testid="stSidebar"] div.stDownloadButton > button {
+            background-color: #0b4d32 !important;
+            color: #ffffff !important;
+            border: 1px solid #1e7e54 !important;
+            border-radius: 6px !important;
+            width: 100% !important;
             font-weight: 600 !important;
         }
+        [data-testid="stSidebar"] div.stDownloadButton > button:hover {
+            background-color: #116943 !important;
+            border: 1px solid #ffffff !important;
+        }
         
-        [data-testid="stMetricLabel"] {
-            font-size: 14px !important;
-        }
-        [data-testid="stMetricValue"] {
-            font-size: 22px !important;
-        }
+        h1 { font-size: 24px !important; font-weight: 700 !important; }
+        h2 { font-size: 20px !important; font-weight: 600 !important; }
+        
+        [data-testid="stMetricLabel"] { font-size: 14px !important; }
+        [data-testid="stMetricValue"] { font-size: 22px !important; }
         
         .stMetric {
             background-color: #f4f7f5;
@@ -133,6 +137,7 @@ def gerar_pdf_manual():
         Paragraph("• <b>Solicitante / Engenheiro:</b> Nome de quem requisitou o suprimento na obra.", style_corpo),
         Paragraph("• <b>Fornecedor:</b> Empresa ou parceiro onde a compra está sendo executada.", style_corpo),
         Paragraph("• <b>Valor Total (R$):</b> Valor final negociado. Use ponto para os centavos.", style_corpo),
+        Paragraph("• <b>Observações:</b> Campo opcional para detalhar termos de entrega, restrições ou recados.", style_corpo),
         Spacer(1, 10),
         
         Paragraph("<b>2. Salvando e Gerando o Documento (Passo 2):</b>", style_sub),
@@ -168,7 +173,7 @@ with st.sidebar:
         paginas_disponiveis = ["🛒 Pedidos de Compra"]
         st.sidebar.success("Acesso: Módulo Compras")
         
-        # DISPONIBILIZAÇÃO DO MANUAL EM PDF NA BARRA LATERAL
+        # DISPONIBILIZAÇÃO DO MANUAL EM PDF NA BARRA LATERAL (CORRIGIDO)
         st.markdown("---")
         st.markdown("### 📚 Central de Ajuda")
         manual_pdf = gerar_pdf_manual()
@@ -260,37 +265,9 @@ if page is not None:
                 if st.form_submit_button("🚀 Inserir Medição e Atualizar Saldo"):
                     if nova_ordem and novo_valor > 0:
                         save_to_db("medicoes_caixa", {"ordem": str(nova_ordem), "valor": float(novo_valor), "data_medicao": str(nova_data)})
-                        st.success("Saldo atualizado na nuvem com sucesso!")
+                        st.success("Saldo updated!")
                         st.cache_resource.clear()
                         st.rerun()
-                    else:
-                        st.error("Por favor, informe a identificação e o valor.")
-            
-            st.markdown("---")
-            st.subheader("📜 Histórico e Edição de Medições")
-            if not df_medicoes_global.empty:
-                df_medicoes_global['valor'] = df_medicoes_global['valor'].astype(float)
-                df_medicoes_exibir = df_medicoes_global.copy()
-                if 'data_medicao' in df_medicoes_exibir.columns:
-                    df_medicoes_exibir['data_medicao'] = pd.to_datetime(df_medicoes_exibir['data_medicao']).dt.date
-
-                mudancas_med = st.data_editor(
-                    df_medicoes_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_medicoes_caixa",
-                    column_config={
-                        "valor": st.column_config.NumberColumn("Valor Recebido (R$)", format="R$ %.2f"),
-                        "data_medicao": st.column_config.DateColumn("Data da Medição", format="DD/MM/YYYY"),
-                        "ordem": st.column_config.TextColumn("Identificador / Ordem")
-                    }
-                )
-                if st.button("💾 Salvar Alterações de Saldo/Medições"):
-                    id_tela_med = mudancas_med['id'].tolist() if 'id' in mudancas_med.columns else []
-                    for id_del in [x for x in df_medicoes_global['id'].tolist() if x not in id_tela_med]:
-                        supabase.table("medicoes_caixa").delete().eq("id", id_del).execute()
-                    for idx, row in mudancas_med.iterrows():
-                        supabase.table("medicoes_caixa").update({"ordem": str(row['ordem']), "valor": float(row['valor']), "data_medicao": str(row['data_medicao'])}).eq("id", row['id']).execute()
-                    st.success("Histórico de caixa atualizado!")
-                    st.cache_resource.clear()
-                    st.rerun()
 
         with aba_lancar:
             st.subheader("Cadastrar Despesa / Contas a Pagar")
@@ -352,13 +329,23 @@ if page is not None:
                     cc1, cc2 = st.columns(2)
                     num_oc = cc1.text_input("Número da OC")
                     solicitante = cc2.text_input("Solicitante / Engenheiro")
+                    
                     cc3, cc4 = st.columns(2)
                     forn = cc3.text_input("Fornecedor")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
+                    # NOVO CAMPO: OBSERVAÇÕES DA ORDEM DE COMPRA
+                    obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
+                    
                     if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
                         if num_oc and forn and val_total > 0:
-                            st.session_state.dados_oc = {"oc_numero": str(num_oc), "solicitante": str(solicitante), "fornecedor": str(forn), "valor_total": float(val_total)}
+                            st.session_state.dados_oc = {
+                                "oc_numero": str(num_oc), 
+                                "solicitante": str(solicitante), 
+                                "fornecedor": str(forn), 
+                                "valor_total": float(val_total),
+                                "observacoes": str(obs)
+                            }
                             
                             pdf_buffer = io.BytesIO()
                             doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
@@ -372,10 +359,18 @@ if page is not None:
                                 Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
                                 Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
                                 Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
+                            ]
+                            
+                            if obs:
+                                story.append(Spacer(1, 10))
+                                story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
+                                
+                            story.extend([
                                 Spacer(1, 30),
                                 Paragraph("____________________________________________", style_corpo),
                                 Paragraph("Assinatura do Departamento de Suprimentos / DP", style_corpo)
-                            ]
+                            ])
+                            
                             doc.build(story)
                             pdf_buffer.seek(0)
                             st.session_state.pdf_pronto = pdf_buffer.getvalue()
@@ -396,13 +391,14 @@ if page is not None:
                     st.session_state.oc_etapa = 1
                     st.rerun()
                 if c_ab2.button("💾 Salvar Pedido no Histórico"):
-                    # Salva usando a chave 'oc_numero' correta exigida pelo banco Supabase
+                    # Incluindo a coluna de observacoes no payload enviado ao Supabase
                     save_to_db("pedidos_compra", {
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
                         "fornecedor": str(dados["fornecedor"]), 
                         "valor_total": float(dados["valor_total"]), 
-                        "status": "Aprovado"
+                        "status": "Aprovado",
+                        "observacoes": str(dados.get("observacoes", ""))
                     })
                     save_to_db("contas_pagar", {
                         "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
@@ -423,8 +419,7 @@ if page is not None:
                 df_vis = df.copy()
                 if 'oc_numero' in df_vis.columns:
                     df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-                    # Força exibição adaptativa independente se o banco usar solicitante ou fornecedor
-                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status'] if c in df_vis.columns]
+                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
                     st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum pedido registrado no histórico.")
@@ -444,7 +439,8 @@ if page is not None:
                             "fornecedor": str(row.get('fornecedor', '')), 
                             "valor_total": float(row['valor_total']), 
                             "status": str(row['status']), 
-                            "oc_numero": str(row.get('oc_numero', ''))
+                            "oc_numero": str(row.get('oc_numero', '')),
+                            "observacoes": str(row.get('observacoes', ''))
                         }).eq("id", row['id']).execute()
                     st.success("Alterações salvas!")
                     st.cache_resource.clear()
@@ -488,8 +484,6 @@ if page is not None:
                 df_exibir = df_mestre[['processo', 'reclamante', 'numero_parcela', 'valor_parcela', 'vencimento', 'status_parc']]
                 df_exibir.columns = ['Processo / Vara', 'Nome do Reclamante', 'Nº Parcela', 'Valor da Parcela', 'Data Vencimento', 'Status']
                 st.dataframe(df_exibir, use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum acordo judicial registrado.")
 
         with aba3:
             st.subheader("Gerenciamento de Parcelas")
@@ -554,8 +548,6 @@ if page is not None:
                 for col in ['salario_base', 'beneficios', 'descontos', 'Custo Total']:
                     df_vis[col] = df_vis[col].apply(formatar_moeda_br)
                 st.dataframe(df_vis[['funcionario', 'funcao', 'mes_referencia', 'salario_base', 'beneficios', 'descontos', 'Custo Total']], use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum registro de folha lançado.")
 
         with aba3:
             df_ger = load_data("folha_pagamento")
@@ -579,8 +571,6 @@ if page is not None:
                         supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
                         supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
-                    st.success("Registros updated!")
+                    st.success("Registros atualizados!")
                     st.cache_resource.clear()
                     st.rerun()
-            else:
-                st.info("Não há registros de folha para gerenciar.")

@@ -129,7 +129,7 @@ def gerar_pdf_manual():
     
     story = [
         Paragraph("<b>Manual do Usuário: Módulo de Pedidos de Compra (OC)</b>", style_titulo),
-        Paragraph("<i>Greenfield Engenharia - ERP Corporativo</i>", style_corpo),
+        Paragraph("<i>Greenfield - ERP Corporativo</i>", style_corpo),
         Spacer(1, 15),
         
         Paragraph("<b>1. Como preencher o Passo 1:</b>", style_sub),

@@ -169,4 +169,6 @@ if page == "📊 Dashboard":
         if not df_pedidos.empty and 'solicitante' in df_pedidos.columns:
             df_pedidos['valor_total'] = df_pedidos['valor_total'].astype(float)
             fig2 = px.bar(df_pedidos, x='solicitante', y='valor_total', title="Compras por Solicitante (R$)", color_discrete_sequence=['#0b4d32'])
-            st.plotly_chart(fig2, use_container_
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("Sem dados de Pedidos para exibir gráficos.")

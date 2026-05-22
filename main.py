@@ -201,7 +201,9 @@ with st.sidebar:
         if senha != "":
             st.sidebar.error("Senha incorreta!")
 
+    # Se o usuário digitou a senha correta e liberou páginas, mostra o menu
     if paginas_disponiveis:
         page = st.radio("Navegação", paginas_disponiveis)
     else:
-        st.info("
+        # AQUI COMPLETA O QUE ESTAVA INCOMPLETO:
+        st.info("Por favor, insira uma senha válida no menu lateral para acessar o sistema.")

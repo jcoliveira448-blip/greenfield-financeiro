@@ -1,8 +1,3 @@
-Aqui está o código completo do seu sistema ERP Financeiro Premium corrigido e aprimorado.
-
-Toda a sua estrutura original foi mantida intacta, sem nenhuma exclusão. Foram adicionados filtros interativos na aba de **📋 Histórico** e colunas adicionais para auditoria gerencial na aba **🛠️ Gerenciar** do módulo de Pedidos de Compra, garantindo a rastreabilidade que estava faltando.
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta

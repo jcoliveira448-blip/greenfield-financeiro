@@ -137,7 +137,6 @@ def gerar_pdf_manual():
         Paragraph("• <b>Solicitante / Engenheiro:</b> Nome de quem requisitou o suprimento na obra.", style_corpo),
         Paragraph("• <b>Fornecedor:</b> Empresa ou parceiro onde a compra está sendo executada.", style_corpo),
         Paragraph("• <b>Valor Total (R$):</b> Valor final negociado. Use ponto para os centavos.", style_corpo),
-        Paragraph("• <b>Data de Vencimento:</b> Defina o vencimento acordado para o pagamento deste pedido.", style_corpo),
         Paragraph("• <b>Observações:</b> Campo opcional para detalhar termos de entrega, restrições ou recados.", style_corpo),
         Spacer(1, 10),
         
@@ -337,7 +336,6 @@ if page is not None:
                     forn = cc3.text_input("Fornecedor")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
-                    data_vencimento = st.date_input("Data de Vencimento da Fatura/Boleto", value=datetime.today().date() + timedelta(days=15), format="DD/MM/YYYY")
                     obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
                     
                     if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
@@ -347,7 +345,6 @@ if page is not None:
                                 "solicitante": str(solicitante), 
                                 "fornecedor": str(forn), 
                                 "valor_total": float(val_total),
-                                "vencimento": str(data_vencimento),
                                 "observacoes": str(obs)
                             }
                             
@@ -357,19 +354,20 @@ if page is not None:
                             style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
                             style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
                             
+                            # AJUSTE DA ESTRUTURA VISUAL DA OC SOLICITADO AQUI
                             story = [
                                 Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra</b>", style_titulo),
                                 Spacer(1, 15),
                                 Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
                                 Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
                                 Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
-                                Paragraph(f"<b>Vencimento Solicitado:</b> {formatar_data_br(str(data_vencimento))}", style_corpo),
                             ]
                             
                             if obs:
                                 story.append(Spacer(1, 10))
                                 story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
                                 
+                            # Número da OC deslocado estrategicamente para a parte inferior em sequência fluida
                             story.extend([
                                 Spacer(1, 20),
                                 Paragraph(f"<b>N° {num_oc}</b>", style_corpo),
@@ -404,17 +402,14 @@ if page is not None:
                         "fornecedor": str(dados["fornecedor"]), 
                         "valor_total": float(dados["valor_total"]), 
                         "status": "Aprovado",
-                        "vencimento": str(dados["vencimento"]), 
                         "observacoes": str(dados.get("observacoes", ""))
                     })
-                    
                     save_to_db("contas_pagar", {
                         "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
-                        "vencimento": str(dados["vencimento"]), 
+                        "vencimento": str(datetime.today().date() + timedelta(days=15)), 
                         "valor": float(dados["valor_total"]), 
                         "status": "Pendente"
                     })
-                    
                     st.success("🎉 Sucesso! Pedido enviado e registrado no histórico!")
                     st.session_state.oc_etapa = 1
                     st.session_state.dados_oc = None
@@ -423,69 +418,21 @@ if page is not None:
                     st.rerun()
 
         with aba2:
-            st.subheader("📋 Histórico Analítico de Pedidos Emitidos")
             df = load_data("pedidos_compra")
             if not df.empty:
                 df_vis = df.copy()
-                
-                # --- MELHORIA: SISTEMA DE FILTROS GERENCIAIS NO HISTÓRICO ---
-                col_f1, col_f2, col_f3 = st.columns(3)
-                with col_f1:
-                    busca_forn = st.text_input("Filtrar por Fornecedor:", key="filtro_forn_hist")
-                with col_f2:
-                    busca_solic = st.text_input("Filtrar por Solicitante:", key="filtro_solic_hist")
-                with col_f3:
-                    filtro_status = st.selectbox("Filtrar por Status:", ["Todos", "Aprovado", "Negado", "Em Análise"], key="filtro_status_hist")
-                
-                # Aplicação dos Filtros Dinâmicos
-                if busca_forn:
-                    df_vis = df_vis[df_vis['fornecedor'].str.contains(busca_forn, case=False, na=False)]
-                if busca_solic:
-                    df_vis = df_vis[df_vis['solicitante'].str.contains(busca_solic, case=False, na=False)]
-                if filtro_status != "Todos":
-                    df_vis = df_vis[df_vis['status'] == filtro_status]
-                
-                if not df_vis.empty:
-                    # Formatação de Moeda e Data para melhor leitura visual
+                if 'oc_numero' in df_vis.columns:
                     df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-                    if 'created_at' in df_vis.columns:
-                        df_vis['Data Emissão'] = df_vis['created_at'].apply(formatar_data_br)
-                    else:
-                        df_vis['Data Emissão'] = "Não Informada"
-                        
-                    colunas_exibir = [c for c in ['oc_numero', 'Data Emissão', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
+                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
                     st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhum pedido atende aos filtros selecionados.")
             else:
                 st.info("Nenhum pedido registrado no histórico.")
 
         with aba3:
-            st.subheader("🛠️ Auditoria e Gerenciamento (Editar/Excluir)")
             df_ger = load_data("pedidos_compra")
             if not df_ger.empty:
                 df_ger['valor_total'] = df_ger['valor_total'].astype(float)
-                
-                # --- MELHORIA: EXPOSIÇÃO DO HISTÓRICO DE AUDITORIA (ID E DATA DE CRIAÇÃO) ---
-                # Organização das colunas para manter o controle gerencial visível ao usuário durante a edição
-                colunas_ordenadas = ['id', 'created_at', 'oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes']
-                colunas_finais = [c for c in colunas_ordenadas if c in df_ger.columns] + [c for c in df_ger.columns if c not in colunas_ordenadas]
-                df_ger = df_ger[colunas_finais]
-
-                mudancas = st.data_editor(
-                    df_ger, 
-                    use_container_width=True, 
-                    num_rows="dynamic", 
-                    hide_index=True, 
-                    key="edit_pc", 
-                    column_config={
-                        "id": st.column_config.TextColumn("ID Interno (Histórico)", disabled=True, help="Identificador único inviolável do banco de dados."),
-                        "created_at": st.column_config.TextColumn("Data Sistema", disabled=True, help="Data e hora exata do registro original."),
-                        "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
-                        "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
-                    }
-                )
-                
+                mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_pc", column_config={"valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])})
                 if st.button("💾 Sincronizar Compras"):
                     id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
                     for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]: 
@@ -502,142 +449,139 @@ if page is not None:
                     st.success("Alterações salvas!")
                     st.cache_resource.clear()
                     st.rerun()
-            else:
-                st.info("Nenhum pedido disponível para gerenciamento.")
 
-   # ===================== 4. ACORDOS JUDICIAIS =====================
-elif page == "⚖️ Acordos Judiciais":
-    st.title("⚖️ Gestão de Acordos Judiciais Trabalhistas")
-    aba1, aba2 = st.tabs(["Firmar Novo Acordo", "📋 Cronograma de Parcelas"])
-    
-    with aba1:
-        with st.form("f_judicial"):
-            j1, j2 = st.columns(2)
-            proc = j1.text_input("Número do Processo / Vara")
-            rec = j2.text_input("Nome do Reclamante")
-            j3, j4, j5 = st.columns(3)
-            val_total = j3.number_input("Valor Total do Acordo (R$)", min_value=1.00, format="%.2f")
-            qtd_parc = j4.number_input("Quantidade de Parcelas", min_value=1, max_value=48, value=1)
-            data_ini = j5.date_input("Vencimento da 1ª Parcela", value=datetime.today(), format="DD/MM/YYYY")
-            
-            if st.form_submit_button("🤝 Gerar Acordo e Cronograma"):
-                if proc and rec and val_total > 0:
-                    acordo = save_to_db("acordos_judiciais", {"processo": proc, "reclamante": rec, "valor_total": float(val_total), "qtd_parcelas": int(qtd_parc), "status": "Em andamento"})
-                    if acordo:
-                        acordo_id = acordo[0]['id']
-                        valor_parcela = float(val_total) / int(qtd_parc)
-                        for i in range(1, int(qtd_parc) + 1):
-                            venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                            save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
-                        st.success("✅ Acordo firmado e parcelas geradas!")
+    # ===================== 4. ACORDOS JUDICIAIS =====================
+    elif page == "⚖️ Acordos Judiciais":
+        st.title("⚖️ Controle de Acordos Judiciais")
+        aba1, aba2, aba3 = st.tabs(["Firmar Acordo", "📋 Histórico de Parcelas Completo", "🛠️ Gerenciar (Editar/Excluir)"])
+        
+        with aba1:
+            with st.form("f_judicial"):
+                j1, j2 = st.columns(2)
+                proc = j1.text_input("Número do Processo / Vara")
+                rec = j2.text_input("Nome do Reclamante")
+                j3, j4, j5 = st.columns(3)
+                val_total = j3.number_input("Valor Total do Acordo (R$)", min_value=1.00, format="%.2f")
+                qtd_parc = j4.number_input("Quantidade de Parcelas", min_value=1, max_value=48, value=1)
+                data_ini = j5.date_input("Vencimento da 1ª Parcela", value=datetime.today(), format="DD/MM/YYYY")
+                
+                if st.form_submit_button("🤝 Gerar Acordo e Cronograma"):
+                    if proc and rec and val_total > 0:
+                        acordo = save_to_db("acordos_judiciais", {"processo": proc, "reclamante": rec, "valor_total": float(val_total), "qtd_parcelas": int(qtd_parc), "status": "Em andamento"})
+                        if acordo:
+                            acordo_id = acordo[0]['id']
+                            valor_parcela = float(val_total) / int(qtd_parc)
+                            for i in range(1, int(qtd_parc) + 1):
+                                venc_parcela = data_ini + timedelta(days=(i-1)*30)
+                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                            st.success("✅ Acordo firmado e parcelas geradas!")
+                            st.cache_resource.clear()
+                            st.rerun()
+
+        with aba2:
+            df_parc = load_data("parcelas_acordo")
+            df_acod = load_data("acordos_judiciais")
+            if not df_parc.empty and not df_acod.empty:
+                df_mestre = pd.merge(df_parc, df_acod, left_on="acordo_id", right_on="id", suffixes=('_parc', '_acord'))
+                df_mestre['valor_parcela'] = df_mestre['valor_parcela'].apply(formatar_moeda_br)
+                df_mestre['vencimento'] = df_mestre['vencimento'].apply(formatar_data_br)
+                df_exibir = df_mestre[['processo', 'reclamante', 'numero_parcela', 'valor_parcela', 'vencimento', 'status_parc']]
+                df_exibir.columns = ['Processo / Vara', 'Nome do Reclamante', 'Nº Parcela', 'Valor da Parcela', 'Data Vencimento', 'Status']
+                st.dataframe(df_exibir, use_container_width=True, hide_index=True)
+
+        with aba3:
+            st.subheader("Gerenciamento de Parcelas")
+            df_ger = load_data("parcelas_acordo")
+            if not df_ger.empty:
+                df_ger['valor_parcela'] = df_ger['valor_parcela'].astype(float)
+                df_ger_exibir = df_ger.copy()
+                if 'vencimento' in df_ger_exibir.columns:
+                    df_ger_exibir['vencimento'] = pd.to_datetime(df_ger_exibir['vencimento']).dt.date
+
+                mudancas = st.data_editor(
+                    df_ger_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_aj", 
+                    column_config={
+                        "valor_parcela": st.column_config.NumberColumn("Valor da Parcela (R$)", format="R$ %.2f"),
+                        "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
+                        "status_parc": st.column_config.SelectboxColumn("Status", options=["Pendente", "Pago", "Atrasado"])
+                    }
+                )
+                if st.button("💾 Sincronizar Cronograma Judicial"):
+                    id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
+                        supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
+                    for idx, row in mudancas.iterrows():
+                        supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
+                    st.success("Cronograma updated!")
+                    st.cache_resource.clear()
+                    st.rerun()
+
+    # ===================== 5. SALÁRIOS =====================
+    elif page == "👥 Salários":
+        st.title("👥 Gestão de Custos com Pessoal")
+        aba1, aba2, aba3 = st.tabs(["Lançar Folha", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
+        
+        with aba1:
+            with st.form("f_folha"):
+                s1, s2 = st.columns(2)
+                func = s1.text_input("Nome do Colaborador")
+                cargo = s2.text_input("Função / Cargo")
+                s3, s4, s5 = st.columns(3)
+                sal_base = s3.number_input("Salário Base (R$)", min_value=0.00, format="%.2f")
+                beneficios = s4.number_input("Benefícios (R$)", min_value=0.00, format="%.2f")
+                descontos = s5.number_input("Descontos (R$)", min_value=0.00, format="%.2f")
+                mes_ref = st.selectbox("Mês de Referência", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
+                
+                if st.form_submit_button("📊 Lançar"):
+                    if func and sal_base > 0:
+                        custo_liquido_folha = float(sal_base) + float(beneficios) - float(descontos)
+                        save_to_db("folha_pagamento", {"funcionario": func, "funcao": cargo, "salario_base": float(sal_base), "beneficios": float(beneficios), "descontos": float(descontos), "mes_referencia": mes_ref})
+                        
+                        vencimento_folha = calcular_quinto_dia_util_mes_seguinte()
+                        save_to_db("contas_pagar", {"fornecedor": f"Folha de Pagamento - {mes_ref} ({func})", "valor": custo_liquido_folha, "vencimento": str(vencimento_folha), "status": "Pendente"})
+                        
+                        st.success("Folha consolidada e provisionada automaticamente no Contas a Pagar!")
                         st.cache_resource.clear()
                         st.rerun()
 
-    with aba2:
-        df_parc = load_data("parcelas_acordo")
-        df_acod = load_data("acordos_judiciais")
-        if not df_parc.empty and not df_acod.empty:
-            df_mestre = pd.merge(df_parc, df_acod, left_on="acordo_id", right_on="id", suffixes=('_parc', '_acord'))
-            df_mestre['valor_parcela'] = df_mestre['valor_parcela'].apply(formatar_moeda_br)
-            df_mestre['vencimento'] = df_mestre['vencimento'].apply(formatar_data_br)
-            df_exibir = df_mestre[['processo', 'reclamante', 'numero_parcela', 'valor_parcela', 'vencimento', 'status_parc']]
-            df_exibir.columns = ['Processo / Vara', 'Nome do Reclamante', 'Nº Parcela', 'Valor da Parcela', 'Data Vencimento', 'Status']
-            st.dataframe(df_exibir, use_container_width=True, hide_index=True)
+        with aba2:
+            df = load_data("folha_pagamento")
+            if not df.empty:
+                df_vis = df.copy()
+                df_vis['Custo Total'] = df_vis['salario_base'] + df_vis['beneficios'] - df_vis['descontos']
+                for col in ['salario_base', 'beneficios', 'descontos', 'Custo Total']:
+                    df_vis[col] = df_vis[col].apply(formatar_moeda_br)
+                st.dataframe(df_vis[['funcionario', 'funcao', 'mes_referencia', 'salario_base', 'beneficios', 'descontos', 'Custo Total']], use_container_width=True, hide_index=True)
 
-
-# ===================== 5. SALÁRIOS =====================
-elif page == "👥 Salários":
-    st.title("👥 Gestão de Custos com Pessoal")
-    aba1, aba2, aba3 = st.tabs(["Lançar Folha", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
-    
-    with aba1:
-        with st.form("f_folha"):
-            s1, s2 = st.columns(2)
-            func = s1.text_input("Nome do Colaborador")
-            cargo = s2.text_input("Função / Cargo")
-            s3, s4, s5 = st.columns(3)
-            sal_base = s3.number_input("Salário Base (R$)", min_value=0.00, format="%.2f")
-            beneficios = s4.number_input("Benefícios (R$)", min_value=0.00, format="%.2f")
-            descontos = s5.number_input("Descontos (R$)", min_value=0.00, format="%.2f")
-            mes_ref = st.selectbox("Mês de Referência", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
-            
-            if st.form_submit_button("📊 Lançar"):
-                if func and sal_base > 0:
-                    custo_liquido_folha = float(sal_base) + float(beneficios) - float(descontos)
-                    save_to_db("folha_pagamento", {"funcionario": func, "funcao": cargo, "salario_base": float(sal_base), "beneficios": float(beneficios), "descontos": float(descontos), "mes_referencia": mes_ref})
-                    
-                    vencimento_folha = calcular_quinto_dia_util_mes_seguinte()
-                    save_to_db("contas_pagar", {"fornecedor": f"Folha de Pagamento - {mes_ref} ({func})", "valor": custo_liquido_folha, "vencimento": str(vencimento_folha), "status": "Pendente"})
-                    
-                    st.success("Folha consolidada e provisionada automaticamente no Contas a Pagar!")
-                    st.cache_resource.clear()
-                    st.rerun()
-
-    with aba2:
-        df = load_data("folha_pagamento")
-        if not df.empty:
-            df_vis = df.copy()
-            df_vis['Custo Total'] = df_vis['salario_base'] + df_vis['beneficios'] - df_vis['descontos']
-            for col in ['salario_base', 'beneficios', 'descontos', 'Custo Total']:
-                df_vis[col] = df_vis[col].apply(formatar_moeda_br)
-            st.dataframe(df_vis[['funcionario', 'funcao', 'mes_referencia', 'salario_base', 'beneficios', 'descontos', 'Custo Total']], use_container_width=True, hide_index=True)
-
-    with aba3:
-        df_ger = load_data("folha_pagamento")
-        
-        # Garante suporte caso a tabela do banco inicie vazia
-        if df_ger is None or df_ger.empty:
-            df_ger = pd.DataFrame(columns=["id", "funcionario", "funcao", "salario_base", "beneficios", "descontos", "mes_referencia"])
-            
-        if not df_ger.empty:
-            df_ger['salario_base'] = df_ger['salario_base'].astype(float) if 'salario_base' in df_ger.columns else 0.0
-            df_ger['beneficios'] = df_ger['beneficios'].astype(float) if 'beneficios' in df_ger.columns else 0.0
-            df_ger['descontos'] = df_ger['descontos'].astype(float) if 'descontos' in df_ger.columns else 0.0
-            
-            mudancas = st.data_editor(
-                df_ger, 
-                use_container_width=True, 
-                num_rows="dynamic", 
-                hide_index=True, 
-                key="edit_sl",
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", disabled=True),
-                    "salario_base": st.column_config.NumberColumn("Salário Base (R$)", format="R$ %.2f"),
-                    "beneficios": st.column_config.NumberColumn("Benefícios (R$)", format="R$ %.2f"),
-                    "descontos": st.column_config.NumberColumn("Descontos (R$)", format="R$ %.2f")
-                }
-            )
-            
-            if st.button("💾 Sincronizar Folha de Pagamento"):
-                try:
-                    # 1. Identificar Linhas Excluídas
-                    ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
-                    ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
-                    ids_deletados = ids_originais - ids_finais
-                    
-                    if ids_deletados:
-                        for id_del in ids_deletados:
-                            supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
-                    
-                    # 2. Processar Atualizações e Inserções
+        with aba3:
+            df_ger = load_data("folha_pagamento")
+            if not df_ger.empty:
+                df_ger['salario_base'] = df_ger['salario_base'].astype(float)
+                df_ger['beneficios'] = df_ger['beneficios'].astype(float)
+                df_ger['descontos'] = df_ger['descontos'].astype(float)
+                
+                mudancas = st.data_editor(
+                    df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_sl",
+                    column_config={
+                        "salario_base": st.column_config.NumberColumn("Salário Base (R$)", format="R$ %.2f"),
+                        "beneficios": st.column_config.NumberColumn("Benefícios (R$)", format="R$ %.2f"),
+                        "descontos": st.column_config.NumberColumn("Descontos (R$)", format="R$ %.2f"),
+                        "mes_referencia": st.column_config.SelectboxColumn("Mês Ref", options=["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
+                    }
+                )
+                if st.button("💾 Sincronizar Folha"):
+                    id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
+                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
+                        supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
-                        dados_linha = {
-                            "funcionario": str(row['funcionario']) if pd.notna(row['funcionario']) else "",
-                            "funcao": str(row['funcao']) if pd.notna(row['funcao']) else "",
-                            "salario_base": float(row['salario_base']) if pd.notna(row['salario_base']) else 0.0,
-                            "beneficios": float(row['beneficios']) if pd.notna(row['beneficios']) else 0.0,
-                            "descontos": float(row['descontos']) if pd.notna(row['descontos']) else 0.0,
-                            "mes_referencia": str(row['mes_referencia']) if pd.notna(row['mes_referencia']) else ""
-                        }
-                        
-                        if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
-                            supabase.table("folha_pagamento").update(dados_linha).eq("id", row['id']).execute()
-                        else:
-                            supabase.table("folha_pagamento").insert(dados_linha).execute()
-                    
-                    st.success("Folha sincronizada com sucesso!")
+                        supabase.table("folha_pagamento").update({
+                            "funcionario": str(row['funcionario']),
+                            "funcao": str(row['funcao']),
+                            "salario_base": float(row['salario_base']),
+                            "beneficios": float(row['beneficios']),
+                            "descontos": float(row['descontos']),
+                            "mes_referencia": str(row['mes_referencia'])
+                        }).eq("id", row['id']).execute()
+                    st.success("Folha atualizada!")
                     st.cache_resource.clear()
                     st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Erro ao sincronizar com o banco de dados: {e}")

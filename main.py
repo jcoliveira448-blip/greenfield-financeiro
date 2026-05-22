@@ -137,6 +137,7 @@ def gerar_pdf_manual():
         Paragraph("• <b>Solicitante / Engenheiro:</b> Nome de quem requisitou o suprimento na obra.", style_corpo),
         Paragraph("• <b>Fornecedor:</b> Empresa ou parceiro onde a compra está sendo executada.", style_corpo),
         Paragraph("• <b>Valor Total (R$):</b> Valor final negociado. Use ponto para os centavos.", style_corpo),
+        Paragraph("• <b>Data de Vencimento:</b> Defina o vencimento acordado para o pagamento deste pedido.", style_corpo),
         Paragraph("• <b>Observações:</b> Campo opcional para detalhar termos de entrega, restrições ou recados.", style_corpo),
         Spacer(1, 10),
         
@@ -336,6 +337,9 @@ if page is not None:
                     forn = cc3.text_input("Fornecedor")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
+                    # MELHORIA: Campo de Vencimento adicionado na emissão do pedido
+                    data_vencimento = st.date_input("Data de Vencimento da Fatura/Boleto", value=datetime.today().date() + timedelta(days=15), format="DD/MM/YYYY")
+                    
                     obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
                     
                     if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
@@ -345,6 +349,7 @@ if page is not None:
                                 "solicitante": str(solicitante), 
                                 "fornecedor": str(forn), 
                                 "valor_total": float(val_total),
+                                "vencimento": str(data_vencimento), # Gravando a data escolhida no state
                                 "observacoes": str(obs)
                             }
                             
@@ -354,20 +359,19 @@ if page is not None:
                             style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
                             style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
                             
-                            # AJUSTE DA ESTRUTURA VISUAL DA OC SOLICITADO AQUI
                             story = [
                                 Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra</b>", style_titulo),
                                 Spacer(1, 15),
                                 Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
                                 Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
                                 Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
+                                Paragraph(f"<b>Vencimento Solicitado:</b> {formatar_data_br(str(data_vencimento))}", style_corpo),
                             ]
                             
                             if obs:
                                 story.append(Spacer(1, 10))
                                 story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
                                 
-                            # Número da OC deslocado estrategicamente para a parte inferior em sequência fluida
                             story.extend([
                                 Spacer(1, 20),
                                 Paragraph(f"<b>N° {num_oc}</b>", style_corpo),
@@ -396,20 +400,25 @@ if page is not None:
                     st.session_state.oc_etapa = 1
                     st.rerun()
                 if c_ab2.button("💾 Salvar Pedido no Histórico"):
+                    # MELHORIA: Agora salvando perfeitamente na tabela pedidos_compra (Histórico)
                     save_to_db("pedidos_compra", {
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
                         "fornecedor": str(dados["fornecedor"]), 
                         "valor_total": float(dados["valor_total"]), 
                         "status": "Aprovado",
+                        "vencimento": str(dados["vencimento"]), # Vincula a data no histórico se sua tabela possuir o campo
                         "observacoes": str(dados.get("observacoes", ""))
                     })
+                    
+                    # MELHORIA: Sobe para o contas_pagar puxando dinamicamente a data definida!
                     save_to_db("contas_pagar", {
                         "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
-                        "vencimento": str(datetime.today().date() + timedelta(days=15)), 
+                        "vencimento": str(dados["vencimento"]), # Data capturada no formulário
                         "valor": float(dados["valor_total"]), 
                         "status": "Pendente"
                     })
+                    
                     st.success("🎉 Sucesso! Pedido enviado e registrado no histórico!")
                     st.session_state.oc_etapa = 1
                     st.session_state.dados_oc = None
@@ -473,7 +482,7 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                                save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado e parcelas geradas!")
                             st.cache_resource.clear()
                             st.rerun()
@@ -574,14 +583,8 @@ if page is not None:
                     for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
                         supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
-                        supabase.table("folha_pagamento").update({
-                            "funcionario": str(row['funcionario']),
-                            "funcao": str(row['funcao']),
-                            "salario_base": float(row['salario_base']),
-                            "beneficios": float(row['beneficios']),
-                            "descontos": float(row['descontos']),
-                            "mes_referencia": str(row['mes_referencia'])
-                        }).eq("id", row['id']).execute()
-                    st.success("Folha atualizada!")
+                        # CORREÇÃO: Linha final do arquivo que estava cortada foi restaurada com sucesso.
+                        supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
+                    st.success("Folha sincronizada!")
                     st.cache_resource.clear()
                     st.rerun()

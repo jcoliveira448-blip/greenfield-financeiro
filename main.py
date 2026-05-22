@@ -33,13 +33,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS customizada corrigida para botões da sidebar
+# Estilização CSS customizada
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: #062618 !important; }
         [data-testid="stSidebar"] * { color: #ffffff !important; }
         
-        /* Correção para o botão de download na sidebar não ficar invisível */
         [data-testid="stSidebar"] div.stDownloadButton > button {
             background-color: #0b4d32 !important;
             color: #ffffff !important;
@@ -175,7 +174,6 @@ with st.sidebar:
     if senha == "compras123":
         paginas_disponiveis = ["🛒 Pedidos de Compra"]
         st.sidebar.success("Acesso: Módulo Compras")
-        
         st.markdown("---")
         st.markdown("### 📚 Central de Ajuda")
         manual_pdf = gerar_pdf_manual()
@@ -267,7 +265,7 @@ if page is not None:
                 if st.form_submit_button("🚀 Inserir Medição e Atualizar Saldo"):
                     if nova_ordem and novo_valor > 0:
                         save_to_db("medicoes_caixa", {"ordem": str(nova_ordem), "valor": float(novo_valor), "data_medicao": str(nova_data)})
-                        st.success("Saldo updated!")
+                        st.success("Saldo atualizado!")
                         st.cache_resource.clear()
                         st.rerun()
 
@@ -316,175 +314,178 @@ if page is not None:
                     st.rerun()
 
     # ===================== 3. PEDIDOS DE COMPRA =====================
-elif page == "🛒 Pedidos de Compra":
-    st.title("🛒 Ordens de Compra (OC)")
-    aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
-    
-    with aba1:
-        if "oc_etapa" not in st.session_state: st.session_state.oc_etapa = 1
-        if "dados_oc" not in st.session_state: st.session_state.dados_oc = None
-        if "pdf_pronto" not in st.session_state: st.session_state.pdf_pronto = None
-
-        if st.session_state.oc_etapa == 1:
-            st.subheader("📋 Passo 1: Informações da Ordem de Compra")
-            with st.form("f_pedido_passo1"):
-                cc1, cc2 = st.columns(2)
-                num_oc = cc1.text_input("Número da OC")
-                solicitante = cc2.text_input("Solicitante / Engenheiro")
-                
-                cc3, cc4 = st.columns(2)
-                forn = cc3.text_input("Fornecedor")
-                val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
-                
-                obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
-                
-                if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
-                    if num_oc and forn and val_total > 0:
-                        st.session_state.dados_oc = {
-                            "oc_numero": str(num_oc), 
-                            "solicitante": str(solicitante), 
-                            "fornecedor": str(forn), 
-                            "valor_total": float(val_total),
-                            "observacoes": str(obs)
-                        }
-                        
-                        pdf_buffer = io.BytesIO()
-                        doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
-                        styles = getSampleStyleSheet()
-                        style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
-                        style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
-                        
-                        story = [
-                            Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra</b>", style_titulo),
-                            Spacer(1, 15),
-                            Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
-                            Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
-                            Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
-                        ]
-                        
-                        if obs:
-                            story.append(Spacer(1, 10))
-                            story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
-                            
-                        story.extend([
-                            Spacer(1, 20),
-                            Paragraph(f"<b>N° {num_oc}</b>", style_corpo),
-                            Spacer(1, 30),
-                            Paragraph("____________________________________________", style_corpo),
-                            Paragraph("Assinatura do Departamento de Suprimentos / DP", style_corpo)
-                        ])
-                        
-                        doc.build(story)
-                        pdf_buffer.seek(0)
-                        st.session_state.pdf_pronto = pdf_buffer.getvalue()
-                        st.session_state.oc_etapa = 2
-                        st.rerun()
-
-        elif st.session_state.oc_etapa == 2:
-            st.subheader("📥 Passo 2: Salvar Arquivo e Registrar no Sistema")
-            dados = st.session_state.dados_oc
-            st.success(f"📌 PDF gerado para a OC {dados['oc_numero']}!")
-            st.download_button(label="📥 Clique aqui para salvar na pasta Downloads", data=st.session_state.pdf_pronto, file_name=f"OC_{dados['oc_numero']}.pdf", mime="application/pdf")
-            
-            st.markdown("---")
-            st.warning("⚠️ Ao clicar no botão abaixo, a OC será salva no histórico geral e integrada ao módulo de Contas a Pagar.")
-            
-            c_ab1, c_ab2 = st.columns(2)
-            if c_ab1.button("🔙 Voltar / Corrigir Dados"):
-                st.session_state.oc_etapa = 1
-                st.rerun()
-                
-            if c_ab2.button("💾 Salvar Pedido no Histórico"):
-                save_to_db("pedidos_compra", {
-                    "oc_numero": str(dados["oc_numero"]), 
-                    "solicitante": str(dados["solicitante"]), 
-                    "fornecedor": str(dados["fornecedor"]), 
-                    "valor_total": float(dados["valor_total"]), 
-                    "status": "Aprovado",
-                    "observacoes": str(dados.get("observacoes", ""))
-                })
-                save_to_db("contas_pagar", {
-                    "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
-                    "vencimento": str(datetime.today().date() + timedelta(days=15)), 
-                    "valor": float(dados["valor_total"]), 
-                    "status": "Pendente"
-                })
-                st.success("🎉 Sucesso! Pedido enviado e registrado no histórico!")
-                st.session_state.oc_etapa = 1
-                st.session_state.dados_oc = None
-                st.session_state.pdf_pronto = None
-                st.cache_resource.clear()
-                st.rerun()
-
-    with aba2:
-        df = load_data("pedidos_compra")
-        if df is not None and not df.empty:
-            df_vis = df.copy()
-            if 'oc_numero' in df_vis.columns:
-                df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-                colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
-                st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
-        else:
-            st.info("Nenhum pedido registrado no histórico.")
-
-    with aba3:
-        df_ger = load_data("pedidos_compra")
+    elif page == "🛒 Pedidos de Compra":
+        st.title("🛒 Ordens de Compra (OC)")
+        aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
         
-        # Garante suporte caso a tabela do banco ainda esteja totalmente vazia
-        if df_ger is None or df_ger.empty:
-            df_ger = pd.DataFrame(columns=["id", "oc_numero", "solicitante", "fornecedor", "valor_total", "status", "observacoes"])
-            
-        if not df_ger.empty:
-            df_ger['valor_total'] = df_ger['valor_total'].astype(float) if 'valor_total' in df_ger.columns else 0.0
-            
-            # O data_editor captura as modificações estruturais com segurança
-            mudancas = st.data_editor(
-                df_ger, 
-                use_container_width=True, 
-                num_rows="dynamic", 
-                hide_index=True, 
-                key="edit_pc", 
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", disabled=True),
-                    "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
-                    "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
-                }
-            )
-            
-            if st.button("💾 Sincronizar Compras"):
-                try:
-                    # 1. Identificar Linhas Excluídas com conjuntos (Set)
-                    ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
-                    ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
-                    ids_deletados = ids_originais - ids_finais
+        with aba1:
+            if "oc_etapa" not in st.session_state: st.session_state.oc_etapa = 1
+            if "dados_oc" not in st.session_state: st.session_state.dados_oc = None
+            if "pdf_pronto" not in st.session_state: st.session_state.pdf_pronto = None
+
+            if st.session_state.oc_etapa == 1:
+                st.subheader("📋 Passo 1: Informações da Ordem de Compra")
+                with st.form("f_pedido_passo1"):
+                    cc1, cc2 = st.columns(2)
+                    num_oc = cc1.text_input("Número da OC")
+                    solicitante = cc2.text_input("Solicitante / Engenheiro")
                     
-                    if ids_deletados:
-                        for id_del in ids_deletados: 
-                            supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
+                    cc3, cc4 = st.columns(2)
+                    forn = cc3.text_input("Fornecedor")
+                    val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
-                    # 2. Processar Atualizações e Inserções Dinâmicas
-                    for idx, row in mudancas.iterrows():
-                        dados_linha = {
-                            "oc_numero": str(row['oc_numero']) if pd.notna(row.get('oc_numero')) else "",
-                            "solicitante": str(row['solicitante']) if pd.notna(row.get('solicitante')) else "", 
-                            "fornecedor": str(row['fornecedor']) if pd.notna(row.get('fornecedor')) else "", 
-                            "valor_total": float(row['valor_total']) if pd.notna(row.get('valor_total')) else 0.0, 
-                            "status": str(row['status']) if pd.notna(row.get('status')) else "Em Análise", 
-                            "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
-                        }
-                        
-                        # Se possui ID válido e pré-existente, executa update
-                        if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
-                            supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
-                        else:
-                            # Se for uma linha inteiramente nova criada no data_editor (+), faz insert
-                            supabase.table("pedidos_compra").insert(dados_linha).execute()
+                    obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
+                    
+                    if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
+                        if num_oc and forn and val_total > 0:
+                            st.session_state.dados_oc = {
+                                "oc_numero": str(num_oc), 
+                                "solicitante": str(solicitante), 
+                                "fornecedor": str(forn), 
+                                "valor_total": float(val_total),
+                                "observacoes": str(obs)
+                            }
                             
-                    st.success("Alterações salvas com sucesso!")
-                    st.cache_resource.clear()
+                            pdf_buffer = io.BytesIO()
+                            doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+                            styles = getSampleStyleSheet()
+                            style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], textColor='#062618', spaceAfter=20)
+                            style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
+                            
+                            story = [
+                                Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra</b>", style_titulo),
+                                Spacer(1, 15),
+                                Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
+                                Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
+                                Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
+                            ]
+                            
+                            if obs:
+                                story.append(Spacer(1, 10))
+                                story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
+                                
+                            story.extend([
+                                Spacer(1, 20),
+                                Paragraph(f"<b>N° {num_oc}</b>", style_corpo),
+                                Spacer(1, 30),
+                                Paragraph("____________________________________________", style_corpo),
+                                Paragraph("Assinatura do Departamento de Suprimentos / DP", style_corpo)
+                            ])
+                            
+                            doc.build(story)
+                            pdf_buffer.seek(0)
+                            st.session_state.pdf_pronto = pdf_buffer.getvalue()
+                            st.session_state.oc_etapa = 2
+                            st.rerun()
+
+            elif st.session_state.oc_etapa == 2:
+                st.subheader("📥 Passo 2: Salvar Arquivo e Registrar no Sistema")
+                dados = st.session_state.dados_oc
+                st.success(f"📌 PDF gerado para a OC {dados['oc_numero']}!")
+                st.download_button(label="📥 Clique aqui para salvar na pasta Downloads", data=st.session_state.pdf_pronto, file_name=f"OC_{dados['oc_numero']}.pdf", mime="application/pdf")
+                
+                st.markdown("---")
+                st.warning("⚠️ Ao clicar no botão abaixo, a OC será salva no histórico geral e integrada ao módulo de Contas a Pagar.")
+                
+                c_ab1, c_ab2 = st.columns(2)
+                if c_ab1.button("🔙 Voltar / Corrigir Dados"):
+                    st.session_state.oc_etapa = 1
                     st.rerun()
                     
-         # ===================== 4. ACORDOS JUDICIAIS =====================
+                if c_ab2.button("💾 Salvar Pedido no Histórico"):
+                    save_to_db("pedidos_compra", {
+                        "oc_numero": str(dados["oc_numero"]), 
+                        "solicitante": str(dados["solicitante"]), 
+                        "fornecedor": str(dados["fornecedor"]), 
+                        "valor_total": float(dados["valor_total"]), 
+                        "status": "Aprovado",
+                        "observacoes": str(dados.get("observacoes", ""))
+                    })
+                    save_to_db("contas_pagar", {
+                        "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
+                        "vencimento": str(datetime.today().date() + timedelta(days=15)), 
+                        "valor": float(dados["valor_total"]), 
+                        "status": "Pendente"
+                    })
+                    st.success("🎉 Sucesso! Pedido enviado e registrado no histórico!")
+                    st.session_state.oc_etapa = 1
+                    st.session_state.dados_oc = None
+                    st.session_state.pdf_pronto = None
+                    st.cache_resource.clear()
+                    st.rerun()
+
+        with aba2:
+            df = load_data("pedidos_compra")
+            if df is not None and not df.empty:
+                df_vis = df.copy()
+                if 'oc_numero' in df_vis.columns:
+                    df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
+                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
+                    st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum pedido registrado no histórico.")
+
+        with aba3:
+            df_ger = load_data("pedidos_compra")
+            
+            if df_ger is None or df_ger.empty:
+                df_ger = pd.DataFrame(columns=["id", "oc_numero", "solicitante", "fornecedor", "valor_total", "status", "observacoes"])
+                
+            if not df_ger.empty:
+                # CORREÇÃO PARA CORRESPONDER À COLUNA REAL DO BANCO (Evita exibir None)
+                if 'valor' in df_ger.columns and 'valor_total' not in df_ger.columns:
+                    df_ger = df_ger.rename(columns={'valor': 'valor_total'})
+                
+                df_ger['valor_total'] = df_ger['valor_total'].astype(float) if 'valor_total' in df_ger.columns else 0.0
+                
+                mudancas = st.data_editor(
+                    df_ger, 
+                    use_container_width=True, 
+                    num_rows="dynamic", 
+                    hide_index=True, 
+                    key="edit_pc", 
+                    column_config={
+                        "id": st.column_config.NumberColumn("ID", disabled=True),
+                        "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
+                        "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
+                    }
+                )
+                
+                if st.button("💾 Sincronizar Compras"):
+                    try:
+                        ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
+                        ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
+                        ids_deletados = ids_originais - ids_finais
+                        
+                        if ids_deletados:
+                            for id_del in ids_deletados: 
+                                supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
+                        
+                        for idx, row in mudancas.iterrows():
+                            # Se a coluna no banco for 'valor', salvamos conforme o schema real
+                            valor_salvar = float(row['valor_total']) if pd.notna(row.get('valor_total')) else 0.0
+                            
+                            dados_linha = {
+                                "oc_numero": str(row['oc_numero']) if pd.notna(row.get('oc_numero')) else "",
+                                "solicitante": str(row['solicitante']) if pd.notna(row.get('solicitante')) else "", 
+                                "fornecedor": str(row['fornecedor']) if pd.notna(row.get('fornecedor')) else "", 
+                                "valor_total": valor_salvar, 
+                                "status": str(row['status']) if pd.notna(row.get('status')) else "Em Análise", 
+                                "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
+                            }
+                           
+                            if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
+                                supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
+                            else:
+                                supabase.table("pedidos_compra").insert(dados_linha).execute()
+                 
+                        st.success("Alterações salvas com sucesso!")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao sincronizar compras: {e}")
+
+    # ===================== 4. ACORDOS JUDICIAIS =====================
     elif page == "⚖️ Acordos Judiciais":
         st.title("⚖️ Controle de Acordos Judiciais")
         aba1, aba2, aba3 = st.tabs(["Firmar Acordo", "📋 Histórico de Parcelas Completo", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -507,7 +508,7 @@ elif page == "🛒 Pedidos de Compra":
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                                save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado e parcelas geradas!")
                             st.cache_resource.clear()
                             st.rerun()
@@ -546,7 +547,7 @@ elif page == "🛒 Pedidos de Compra":
                         supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
                         supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
-                    st.success("Cronograma updated!")
+                    st.success("Cronograma atualizado!")
                     st.cache_resource.clear()
                     st.rerun()
 
@@ -616,6 +617,6 @@ elif page == "🛒 Pedidos de Compra":
                             "descontos": float(row['descontos']),
                             "mes_referencia": str(row['mes_referencia'])
                         }).eq("id", row['id']).execute()
-                    st.success("Folha atualizada!")
+                    st.success("Folha updated!")
                     st.cache_resource.clear()
                     st.rerun()

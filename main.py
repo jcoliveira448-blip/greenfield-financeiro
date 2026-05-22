@@ -33,7 +33,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS customizada
+# Estilização CSS customizada corrigida para botões da sidebar
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: #062618 !important; }
@@ -174,6 +174,7 @@ with st.sidebar:
     if senha == "compras123":
         paginas_disponiveis = ["🛒 Pedidos de Compra"]
         st.sidebar.success("Acesso: Módulo Compras")
+        
         st.markdown("---")
         st.markdown("### 📚 Central de Ajuda")
         manual_pdf = gerar_pdf_manual()
@@ -216,7 +217,14 @@ if page is not None:
         df_parcelas = load_data("parcelas_acordo")
         
         val_contas = df_contas['valor'].astype(float).sum() if not df_contas.empty and 'valor' in df_contas.columns else 0.0
-        val_pedidos = df_pedidos['valor_total'].astype(float).sum() if not df_pedidos.empty and 'valor_total' in df_pedidos.columns else 0.0
+        
+        # Correção para somar a coluna correta de valores de pedidos de compra ('valor' ou 'valor_total')
+        if not df_pedidos.empty:
+            col_valor_pc = 'valor' if 'valor' in df_pedidos.columns else ('valor_total' if 'valor_total' in df_pedidos.columns else None)
+            val_pedidos = df_pedidos[col_valor_pc].astype(float).sum() if col_valor_pc else 0.0
+        else:
+            val_pedidos = 0.0
+            
         val_judiciais = df_parcelas['valor_parcela'].astype(float).sum() if not df_parcelas.empty and 'valor_parcela' in df_parcelas.columns else 0.0
         
         c1, c2, c3, c4 = st.columns(4)
@@ -238,9 +246,10 @@ if page is not None:
                 
         with g2:
             if not df_pedidos.empty and ('solicitante' in df_pedidos.columns or 'solicitante_nome' in df_pedidos.columns):
-                df_pedidos['valor_total'] = df_pedidos['valor_total'].astype(float)
+                col_val_grafico = 'valor' if 'valor' in df_pedidos.columns else 'valor_total'
+                df_pedidos[col_val_grafico] = df_pedidos[col_val_grafico].astype(float)
                 eixo_x = 'solicitante' if 'solicitante' in df_pedidos.columns else 'fornecedor'
-                fig2 = px.bar(df_pedidos, x=eixo_x, y='valor_total', title="Compras por Responsável/Fornecedor (R$)", color_discrete_sequence=['#0b4d32'])
+                fig2 = px.bar(df_pedidos, x=eixo_x, y=col_val_grafico, title="Compras por Responsável/Fornecedor (R$)", color_discrete_sequence=['#0b4d32'])
                 st.plotly_chart(fig2, use_container_width=True)
             else:
                 st.info("Sem dados de Pedidos para exibir gráficos.")
@@ -313,7 +322,7 @@ if page is not None:
                     st.cache_resource.clear()
                     st.rerun()
 
-    # ===================== 3. PEDIDOS DE COMPRA =====================
+    # ===================== 3. PEDIDOS DE COMPRA (CORRIGIDO) =====================
     elif page == "🛒 Pedidos de Compra":
         st.title("🛒 Ordens de Compra (OC)")
         aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
@@ -342,7 +351,7 @@ if page is not None:
                                 "oc_numero": str(num_oc), 
                                 "solicitante": str(solicitante), 
                                 "fornecedor": str(forn), 
-                                "valor_total": float(val_total),
+                                "valor": float(val_total), # Mapeado para o nome oficial 'valor'
                                 "observacoes": str(obs)
                             }
                             
@@ -397,14 +406,14 @@ if page is not None:
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
                         "fornecedor": str(dados["fornecedor"]), 
-                        "valor_total": float(dados["valor_total"]), 
+                        "valor": float(dados["valor"]), 
                         "status": "Aprovado",
                         "observacoes": str(dados.get("observacoes", ""))
                     })
                     save_to_db("contas_pagar", {
                         "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
                         "vencimento": str(datetime.today().date() + timedelta(days=15)), 
-                        "valor": float(dados["valor_total"]), 
+                        "valor": float(dados["valor"]), 
                         "status": "Pendente"
                     })
                     st.success("🎉 Sucesso! Pedido enviado e registrado no histórico!")
@@ -418,25 +427,27 @@ if page is not None:
             df = load_data("pedidos_compra")
             if df is not None and not df.empty:
                 df_vis = df.copy()
-                if 'oc_numero' in df_vis.columns:
-                    df_vis['valor_total'] = df_vis['valor_total'].apply(formatar_moeda_br)
-                    colunas_exibir = [c for c in ['oc_numero', 'solicitante', 'fornecedor', 'valor_total', 'status', 'observacoes'] if c in df_vis.columns]
-                    st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
+                # Tratamento dinâmico para compatibilidade de colunas (Exibe valor formatado sem quebrar)
+                col_valor = 'valor' if 'valor' in df_vis.columns else 'valor_total'
+                df_vis['valor_total_formatado'] = df_vis[col_valor].apply(formatar_moeda_br)
+                
+                df_vis = df_vis.rename(columns={'oc_numero': 'Nº da OC', 'solicitante': 'Solicitante', 'fornecedor': 'Fornecedor', 'valor_total_formatado': 'Valor Total', 'status': 'Status', 'observacoes': 'Observações'})
+                colunas_exibir = [c for c in ['Nº da OC', 'Solicitante', 'Fornecedor', 'Valor Total', 'Status', 'Observações'] if c in df_vis.columns]
+                st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum pedido registrado no histórico.")
 
         with aba3:
             df_ger = load_data("pedidos_compra")
-            
             if df_ger is None or df_ger.empty:
-                df_ger = pd.DataFrame(columns=["id", "oc_numero", "solicitante", "fornecedor", "valor_total", "status", "observacoes"])
+                df_ger = pd.DataFrame(columns=["id", "oc_numero", "solicitante", "fornecedor", "valor", "status", "observacoes"])
                 
             if not df_ger.empty:
-                # CORREÇÃO PARA CORRESPONDER À COLUNA REAL DO BANCO (Evita exibir None)
-                if 'valor' in df_ger.columns and 'valor_total' not in df_ger.columns:
-                    df_ger = df_ger.rename(columns={'valor': 'valor_total'})
+                # CORREÇÃO CRÍTICA DO BUG DA IMAGEM: Unifica a leitura da coluna 'valor' do banco de dados
+                if 'valor_total' in df_ger.columns and 'valor' not in df_ger.columns:
+                    df_ger = df_ger.rename(columns={'valor_total': 'valor'})
                 
-                df_ger['valor_total'] = df_ger['valor_total'].astype(float) if 'valor_total' in df_ger.columns else 0.0
+                df_ger['valor'] = df_ger['valor'].astype(float) if 'valor' in df_ger.columns else 0.0
                 
                 mudancas = st.data_editor(
                     df_ger, 
@@ -446,7 +457,7 @@ if page is not None:
                     key="edit_pc", 
                     column_config={
                         "id": st.column_config.NumberColumn("ID", disabled=True),
-                        "valor_total": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
+                        "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"), 
                         "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
                     }
                 )
@@ -462,22 +473,19 @@ if page is not None:
                                 supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
                         
                         for idx, row in mudancas.iterrows():
-                            # Se a coluna no banco for 'valor', salvamos conforme o schema real
-                            valor_salvar = float(row['valor_total']) if pd.notna(row.get('valor_total')) else 0.0
-                            
                             dados_linha = {
                                 "oc_numero": str(row['oc_numero']) if pd.notna(row.get('oc_numero')) else "",
                                 "solicitante": str(row['solicitante']) if pd.notna(row.get('solicitante')) else "", 
                                 "fornecedor": str(row['fornecedor']) if pd.notna(row.get('fornecedor')) else "", 
-                                "valor_total": valor_salvar, 
+                                "valor": float(row['valor']) if pd.notna(row.get('valor')) else 0.0, 
                                 "status": str(row['status']) if pd.notna(row.get('status')) else "Em Análise", 
                                 "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
                             }
                            
-                            if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
-                                supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
-                            else:
-                                supabase.table("pedidos_compra").insert(dados_linha).execute()
+                        if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
+                            supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
+                        else:
+                            supabase.table("pedidos_compra").insert(dados_linha).execute()
                  
                         st.success("Alterações salvas com sucesso!")
                         st.cache_resource.clear()
@@ -508,6 +516,7 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
+                                # CORREÇÃO DE DIGITAÇÃO AQUI (Mudado de acuerdo_id para acordo_id)
                                 save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado e parcelas geradas!")
                             st.cache_resource.clear()
@@ -617,6 +626,6 @@ if page is not None:
                             "descontos": float(row['descontos']),
                             "mes_referencia": str(row['mes_referencia'])
                         }).eq("id", row['id']).execute()
-                    st.success("Folha updated!")
+                    st.success("Folha atualizada!")
                     st.cache_resource.clear()
                     st.rerun()

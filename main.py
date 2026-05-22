@@ -545,31 +545,68 @@ if page is not None:
                 st.dataframe(df_exibir, use_container_width=True, hide_index=True)
 
         with aba3:
-            st.subheader("Gerenciamento de Parcelas")
-            df_ger = load_data("parcelas_acordo")
-            if not df_ger.empty:
-                df_ger['valor_parcela'] = df_ger['valor_parcela'].astype(float)
-                df_ger_exibir = df_ger.copy()
-                if 'vencimento' in df_ger_exibir.columns:
-                    df_ger_exibir['vencimento'] = pd.to_datetime(df_ger_exibir['vencimento']).dt.date
-
-                mudancas = st.data_editor(
-                    df_ger_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_aj", 
-                    column_config={
-                        "valor_parcela": st.column_config.NumberColumn("Valor da Parcela (R$)", format="R$ %.2f"),
-                        "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
-                        "status_parc": st.column_config.SelectboxColumn("Status", options=["Pendente", "Pago", "Atrasado"])
-                    }
-                )
-                if st.button("💾 Sincronizar Cronograma Judicial"):
-                    id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
-                        supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
-                    for idx, row in mudancas.iterrows():
-                        supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
-                    st.success("Cronograma updated!")
-                    st.cache_resource.clear()
-                    st.rerun()
+    df_ger = load_data("folha_pagamento")
+    
+    # Se o banco de dados retornar vazio, criamos uma estrutura padrão para permitir inserções
+    if df_ger is None or df_ger.empty:
+        df_ger = pd.DataFrame(columns=["id", "funcionario", "funcao", "salario_base", "beneficios", "descontos", "mes_referencia"])
+    
+    # Garante a tipagem correta para exibição numérica no editor
+    df_ger['salario_base'] = df_ger['salario_base'].astype(float) if 'salario_base' in df_ger.columns else 0.0
+    df_ger['beneficios'] = df_ger['beneficios'].astype(float) if 'beneficios' in df_ger.columns else 0.0
+    df_ger['descontos'] = df_ger['descontos'].astype(float) if 'descontos' in df_ger.columns else 0.0
+    
+    # O data_editor exibe e captura as modificações estruturais
+    mudancas = st.data_editor(
+        df_ger, 
+        use_container_width=True, 
+        num_rows="dynamic", 
+        hide_index=True, 
+        key="edit_sl",
+        column_config={
+            "id": st.column_config.NumberColumn("ID", disabled=True), # Evita que alterem o ID na mão
+            "salario_base": st.column_config.NumberColumn("Salário Base (R$)", format="R$ %.2f"),
+            "beneficios": st.column_config.NumberColumn("Benefícios (R$)", format="R$ %.2f"),
+            "descontos": st.column_config.NumberColumn("Descontos (R$)", format="R$ %.2f")
+        }
+    )
+    
+    if st.button("💾 Sincronizar Folha de Pagamento"):
+        try:
+            # 1. Identificar Linhas Excluídas
+            ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
+            ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
+            ids_deletados = ids_originais - ids_finais
+            
+            if ids_deletados:
+                for id_del in ids_deletados:
+                    supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
+            
+            # 2. Processar Atualizações e Inserções
+            for idx, row in mudancas.iterrows():
+                # Monta o dicionário tratando os nulos do st.data_editor
+                dados_linha = {
+                    "funcionario": str(row['funcionario']) if pd.notna(row['funcionario']) else "",
+                    "funcao": str(row['funcao']) if pd.notna(row['funcao']) else "",
+                    "salario_base": float(row['salario_base']) if pd.notna(row['salario_base']) else 0.0,
+                    "beneficios": float(row['beneficios']) if pd.notna(row['beneficios']) else 0.0,
+                    "descontos": float(row['descontos']) if pd.notna(row['descontos']) else 0.0,
+                    "mes_referencia": str(row['mes_referencia']) if pd.notna(row['mes_referencia']) else ""
+                }
+                
+                # Se a linha tem ID válido e ele existia no banco original, atualiza
+                if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
+                    supabase.table("folha_pagamento").update(dados_linha).eq("id", row['id']).execute()
+                else:
+                    # Se não tem ID ou é uma linha nova adicionada pelo botão (+), faz o insert
+                    supabase.table("folha_pagamento").insert(dados_linha).execute()
+            
+            st.success("Folha sincronizada com sucesso!")
+            st.cache_resource.clear()
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Erro ao sincronizar com o banco de dados: {e}")
 
     # ===================== 5. SALÁRIOS =====================
     elif page == "👥 Salários":

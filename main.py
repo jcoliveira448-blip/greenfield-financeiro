@@ -216,9 +216,9 @@ if page is not None:
         df_pedidos = load_data("pedidos_compra")
         df_parcelas = load_data("parcelas_acordo")
         
+        # 3° PONTO SOLICITADO: Consolidação e soma robusta do Contas a Pagar
         val_contas = df_contas['valor'].astype(float).sum() if not df_contas.empty and 'valor' in df_contas.columns else 0.0
         
-        # Correção para somar a coluna correta de valores de pedidos de compra ('valor' ou 'valor_total')
         if not df_pedidos.empty:
             col_valor_pc = 'valor' if 'valor' in df_pedidos.columns else ('valor_total' if 'valor_total' in df_pedidos.columns else None)
             val_pedidos = df_pedidos[col_valor_pc].astype(float).sum() if col_valor_pc else 0.0
@@ -257,6 +257,8 @@ if page is not None:
     # ===================== 2. CONTAS A PAGAR & GESTÃO DE CAIXA =====================
     elif page == "💳 Contas a Pagar & Caixa":
         st.title("💳 Contas a Pagar & Controle de Caixa")
+        
+        # 2° PONTO SOLICITADO: Padronização das abas contendo a estrutura Gerenciar Contas
         aba_caixa, aba_lancar, aba_gerenciar = st.tabs(["📊 Saldo & Medições", "📋 Lançar Nova Conta", "🛠️ Gerenciar Contas"])
         
         with aba_caixa:
@@ -322,10 +324,12 @@ if page is not None:
                     st.cache_resource.clear()
                     st.rerun()
 
-    # ===================== 3. PEDIDOS DE COMPRA (CORRIGIDO) =====================
+    # ===================== 3. PEDIDOS DE COMPRA & ORDEM DE SERVIÇO =====================
     elif page == "🛒 Pedidos de Compra":
-        st.title("🛒 Ordens de Compra (OC)")
-        aba1, aba2, aba3 = st.tabs(["Emitir Pedido", "📋 Histórico", "🛠️ Gerenciar (Editar/Excluir)"])
+        st.title("🛒 Ordens de Compra / Serviço (OC/OS)")
+        
+        # 1° PONTO SOLICITADO: Estruturação com Emissão, Histórico e Gerenciar
+        aba1, aba2, aba3 = st.tabs(["Emitir Pedido/Ordem", "📋 Histórico Integrado", "🛠️ Gerenciar (Editar/Excluir)"])
         
         with aba1:
             if "oc_etapa" not in st.session_state: st.session_state.oc_etapa = 1
@@ -333,25 +337,25 @@ if page is not None:
             if "pdf_pronto" not in st.session_state: st.session_state.pdf_pronto = None
 
             if st.session_state.oc_etapa == 1:
-                st.subheader("📋 Passo 1: Informações da Ordem de Compra")
+                st.subheader("📋 Passo 1: Informações da Ordem de Compra / Serviço")
                 with st.form("f_pedido_passo1"):
                     cc1, cc2 = st.columns(2)
-                    num_oc = cc1.text_input("Número da OC")
-                    solicitante = cc2.text_input("Solicitante / Engenheiro")
+                    num_oc = cc1.text_input("Número da OC / OS")
+                    solicitante = cc2.text_input("Solicitante / Engenheiro / Setor")
                     
                     cc3, cc4 = st.columns(2)
-                    forn = cc3.text_input("Fornecedor")
+                    forn = cc3.text_input("Fornecedor / Prestador de Serviço")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
-                    obs = st.text_area("Observações / Condições Especiais", help="Adicione detalhes de entrega, prazos ou dados importantes.")
+                    obs = st.text_area("Observações / Escopo do Serviço / Condições Especiais", help="Detalhes completos sobre a entrega ou execução.")
                     
-                    if st.form_submit_button("⚙️ Gerar PDF do Pedido"):
+                    if st.form_submit_button("⚙️ Gerar PDF da Ordem"):
                         if num_oc and forn and val_total > 0:
                             st.session_state.dados_oc = {
                                 "oc_numero": str(num_oc), 
                                 "solicitante": str(solicitante), 
                                 "fornecedor": str(forn), 
-                                "valor": float(val_total), # Mapeado para o nome oficial 'valor'
+                                "valor": float(val_total),
                                 "observacoes": str(obs)
                             }
                             
@@ -362,23 +366,22 @@ if page is not None:
                             style_corpo = ParagraphStyle('Corpo', parent=styles['Normal'], fontSize=12, leading=18, spaceAfter=10)
                             
                             story = [
-                                Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra</b>", style_titulo),
+                                Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra e Serviço (OC/OS)</b>", style_titulo),
                                 Spacer(1, 15),
-                                Paragraph(f"<b>Solicitante / Engenheiro:</b> {solicitante}", style_corpo),
-                                Paragraph(f"<b>Fornecedor Homologado:</b> {forn}", style_corpo),
-                                Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
+                                Paragraph(f"<b>Identificador N°:</b> {num_oc}", style_corpo),
+                                Paragraph(f"<b>Solicitante / Setor Responsável:</b> {solicitante}", style_corpo),
+                                Paragraph(f"<b>Fornecedor / Prestador Homologado:</b> {forn}", style_corpo),
+                                Paragraph(f"<b>Valor Alocado para o Contrato:</b> {formatar_moeda_br(val_total)}", style_corpo),
                             ]
                             
                             if obs:
                                 story.append(Spacer(1, 10))
-                                story.append(Paragraph(f"<b>Observações Internas:</b> {obs}", style_corpo))
+                                story.append(Paragraph(f"<b>Escopo / Observações:</b> {obs}", style_corpo))
                                 
                             story.extend([
-                                Spacer(1, 20),
-                                Paragraph(f"<b>N° {num_oc}</b>", style_corpo),
-                                Spacer(1, 30),
-                                Paragraph("____________________________________________", style_corpo),
-                                Paragraph("Assinatura do Departamento de Suprimentos / DP", style_corpo)
+                                Spacer(1, 40),
+                                Paragraph("________________________________________________________", style_corpo),
+                                Paragraph("Assinatura do Departamento de Suprimentos / DP Greenfield", style_corpo)
                             ])
                             
                             doc.build(story)
@@ -390,18 +393,18 @@ if page is not None:
             elif st.session_state.oc_etapa == 2:
                 st.subheader("📥 Passo 2: Salvar Arquivo e Registrar no Sistema")
                 dados = st.session_state.dados_oc
-                st.success(f"📌 PDF gerado para a OC {dados['oc_numero']}!")
-                st.download_button(label="📥 Clique aqui para salvar na pasta Downloads", data=st.session_state.pdf_pronto, file_name=f"OC_{dados['oc_numero']}.pdf", mime="application/pdf")
+                st.success(f"📌 Documento PDF da Ordem {dados['oc_numero']} gerado com sucesso!")
+                st.download_button(label="📥 Baixar Documento PDF", data=st.session_state.pdf_pronto, file_name=f"Ordem_{dados['oc_numero']}.pdf", mime="application/pdf")
                 
                 st.markdown("---")
-                st.warning("⚠️ Ao clicar no botão abaixo, a OC será salva no histórico geral e integrada ao módulo de Contas a Pagar.")
+                st.warning("⚠️ Ao salvar, as informações serão consolidadas no histórico e provisionadas no Contas a Pagar.")
                 
                 c_ab1, c_ab2 = st.columns(2)
-                if c_ab1.button("🔙 Voltar / Corrigir Dados"):
+                if c_ab1.button("🔙 Voltar / Editar Dados"):
                     st.session_state.oc_etapa = 1
                     st.rerun()
                     
-                if c_ab2.button("💾 Salvar Pedido no Histórico"):
+                if c_ab2.button("💾 Salvar Ordem no Histórico"):
                     save_to_db("pedidos_compra", {
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
@@ -411,12 +414,12 @@ if page is not None:
                         "observacoes": str(dados.get("observacoes", ""))
                     })
                     save_to_db("contas_pagar", {
-                        "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
+                        "fornecedor": f"OC/OS {dados['oc_numero']} - {dados['fornecedor']}", 
                         "vencimento": str(datetime.today().date() + timedelta(days=15)), 
                         "valor": float(dados["valor"]), 
                         "status": "Pendente"
                     })
-                    st.success("🎉 Sucesso! Pedido enviado e registrado no histórico!")
+                    st.success("🎉 Processo concluído! Histórico e Financeiro alimentados!")
                     st.session_state.oc_etapa = 1
                     st.session_state.dados_oc = None
                     st.session_state.pdf_pronto = None
@@ -427,15 +430,14 @@ if page is not None:
             df = load_data("pedidos_compra")
             if df is not None and not df.empty:
                 df_vis = df.copy()
-                # Tratamento dinâmico para compatibilidade de colunas (Exibe valor formatado sem quebrar)
                 col_valor = 'valor' if 'valor' in df_vis.columns else 'valor_total'
                 df_vis['valor_total_formatado'] = df_vis[col_valor].apply(formatar_moeda_br)
                 
-                df_vis = df_vis.rename(columns={'oc_numero': 'Nº da OC', 'solicitante': 'Solicitante', 'fornecedor': 'Fornecedor', 'valor_total_formatado': 'Valor Total', 'status': 'Status', 'observacoes': 'Observações'})
-                colunas_exibir = [c for c in ['Nº da OC', 'Solicitante', 'Fornecedor', 'Valor Total', 'Status', 'Observações'] if c in df_vis.columns]
+                df_vis = df_vis.rename(columns={'oc_numero': 'Nº da OC/OS', 'solicitante': 'Solicitante', 'fornecedor': 'Fornecedor/Prestador', 'valor_total_formatado': 'Valor Alocado', 'status': 'Status', 'observacoes': 'Observações/Escopo'})
+                colunas_exibir = [c for c in ['Nº da OC/OS', 'Solicitante', 'Fornecedor/Prestador', 'Valor Alocado', 'Status', 'Observações/Escopo'] if c in df_vis.columns]
                 st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
             else:
-                st.info("Nenhum pedido registrado no histórico.")
+                st.info("Nenhuma ordem de compra ou serviço localizada.")
 
         with aba3:
             df_ger = load_data("pedidos_compra")
@@ -443,26 +445,31 @@ if page is not None:
                 df_ger = pd.DataFrame(columns=["id", "oc_numero", "solicitante", "fornecedor", "valor", "status", "observacoes"])
                 
             if not df_ger.empty:
-                # CORREÇÃO CRÍTICA DO BUG DA IMAGEM: Unifica a leitura da coluna 'valor' do banco de dados
+                # SOLUÇÃO DO BUG DO NONE: Força o mapeamento correto na coluna 'valor' do Supabase
                 if 'valor_total' in df_ger.columns and 'valor' not in df_ger.columns:
                     df_ger = df_ger.rename(columns={'valor_total': 'valor'})
                 
                 df_ger['valor'] = df_ger['valor'].astype(float) if 'valor' in df_ger.columns else 0.0
                 
+                # Exibição profissional e limpa eliminando colunas internas desnecessárias para o usuário
+                colunas_finais_editor = ["id", "oc_numero", "solicitante", "fornecedor", "valor", "status", "observacoes"]
+                df_ger_filtrado = df_ger[[c for c in colunas_finais_editor if c in df_ger.columns]]
+
                 mudancas = st.data_editor(
-                    df_ger, 
+                    df_ger_filtrado, 
                     use_container_width=True, 
                     num_rows="dynamic", 
                     hide_index=True, 
-                    key="edit_pc", 
+                    key="edit_pc_v2", 
                     column_config={
-                        "id": st.column_config.NumberColumn("ID", disabled=True),
-                        "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"), 
+                        "id": st.column_config.NumberColumn("ID Interno", disabled=True),
+                        "oc_numero": st.column_config.TextColumn("Nº OC/OS"),
+                        "valor": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
                         "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
                     }
                 )
                 
-                if st.button("💾 Sincronizar Compras"):
+                if st.button("💾 Sincronizar e Salvar Alterações"):
                     try:
                         ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
                         ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
@@ -482,12 +489,12 @@ if page is not None:
                                 "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
                             }
                            
-                        if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
-                            supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
-                        else:
-                            supabase.table("pedidos_compra").insert(dados_linha).execute()
+                            if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
+                                supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
+                            else:
+                                supabase.table("pedidos_compra").insert(dados_linha).execute()
                  
-                        st.success("Alterações salvas com sucesso!")
+                        st.success("Tabela sincronizada com o banco com sucesso!")
                         st.cache_resource.clear()
                         st.rerun()
                     except Exception as e:
@@ -497,7 +504,7 @@ if page is not None:
     elif page == "⚖️ Acordos Judiciais":
         st.title("⚖️ Controle de Acordos Judiciais")
         aba1, aba2, aba3 = st.tabs(["Firmar Acordo", "📋 Histórico de Parcelas Completo", "🛠️ Gerenciar (Editar/Excluir)"])
-        
+         
         with aba1:
             with st.form("f_judicial"):
                 j1, j2 = st.columns(2)
@@ -516,7 +523,6 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                # CORREÇÃO DE DIGITAÇÃO AQUI (Mudado de acuerdo_id para acordo_id)
                                 save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado e parcelas geradas!")
                             st.cache_resource.clear()

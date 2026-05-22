@@ -17,12 +17,11 @@ SUPABASE_KEY = "sb_publishable_SXqZhVhu0oyCRz5AMnTFoA_l8bYiPeq"
 def init_connection():
     try:
         client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # Teste rápido de conexão
         client.table("contas_pagar").select("count", count="exact").execute()
         return client
     except Exception as e:
         st.error(f"Erro ao conectar com Supabase: {e}")
-        return None
+    return None
 
 supabase: Client = init_connection()
 
@@ -62,25 +61,29 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ===================== FUNÇÕES AUXILIARES DE BANCO (CORRIGIDAS) =====================
-# Alterado para st.cache_data para permitir a invalidação precisa por comando via código
-@st.cache_data(ttl=600)
+# ===================== FUNÇÕES AUXILIARES DE BANCO (MELHORADAS) =====================
 def load_data(table: str) -> pd.DataFrame:
-    if not supabase: 
+    if not supabase:
         return pd.DataFrame()
     try:
-        res = supabase.table(table).select("*").execute()
-        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+        response = supabase.table(table).select("*").execute()
+        if response.data:
+            return pd.DataFrame(response.data)
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"Erro ao carregar {table}: {e}")
         return pd.DataFrame()
 
 def save_to_db(table: str, data: dict):
-    if not supabase: 
+    if not supabase:
+        st.error("Supabase não conectado.")
         return None
     try:
-        res = supabase.table(table).insert(data).execute()
-        return res.data
+        response = supabase.table(table).insert(data).execute()
+        if response.data:
+            return response.data
+        st.error(f"Nenhum dado retornado ao salvar em {table}")
+        return None
     except Exception as e:
         st.error(f"Erro ao salvar em {table}: {e}")
         return None
@@ -133,8 +136,7 @@ with st.sidebar:
         st.sidebar.success("Acesso: Administrador")
     else:
         paginas_disponiveis = []
-        if senha != "": 
-            st.sidebar.error("Senha incorreta!")
+        if senha != "": st.sidebar.error("Senha incorreta!")
 
     if paginas_disponiveis:
         page = st.radio("Navegação", paginas_disponiveis)
@@ -154,12 +156,9 @@ if page is not None:
         
         val_contas = df_contas['valor'].astype(float).sum() if not df_contas.empty and 'valor' in df_contas.columns else 0.0
         
-        # 4° CORREÇÃO TÉCNICA: Unificação e tratamento definitivo da coluna 'valor' no Dashboard
-        if not df_pedidos.empty:
-            col_valor_pc = 'valor' if 'valor' in df_pedidos.columns else ('valor_total' if 'valor_total' in df_pedidos.columns else None)
-            val_pedidos = df_pedidos[col_valor_pc].astype(float).sum() if col_valor_pc else 0.0
-        else:
-            val_pedidos = 0.0
+        # Padronização aplicada de col_valor_pc para 'valor'
+        col_valor_pc = 'valor'
+        val_pedidos = df_pedidos[col_valor_pc].astype(float).sum() if not df_pedidos.empty and col_valor_pc in df_pedidos.columns else 0.0
             
         val_judiciais = df_parcelas['valor_parcela'].astype(float).sum() if not df_parcelas.empty and 'valor_parcela' in df_parcelas.columns else 0.0
         
@@ -180,7 +179,8 @@ if page is not None:
                 
         with g2:
             if not df_pedidos.empty:
-                col_val_grafico = 'valor' if 'valor' in df_pedidos.columns else 'valor_total'
+                # Padronização aplicada de col_val_grafico para 'valor'
+                col_val_grafico = 'valor'
                 df_pedidos[col_val_grafico] = df_pedidos[col_val_grafico].astype(float)
                 eixo_x = 'solicitante' if 'solicitante' in df_pedidos.columns else 'fornecedor'
                 fig2 = px.bar(df_pedidos, x=eixo_x, y=col_val_grafico, title="Compras/Serviços por Responsável (R$)", color_discrete_sequence=['#0b4d32'])
@@ -207,8 +207,9 @@ if page is not None:
                 if st.form_submit_button("🚀 Inserir Medição"):
                     if nova_ordem and novo_valor > 0:
                         save_to_db("medicoes_caixa", {"ordem": str(nova_ordem), "valor": float(novo_valor), "data_medicao": str(nova_data)})
-                        st.success("Saldo atualizado!")
+                        st.success("Saldo updated!")
                         st.cache_data.clear()
+                        st.cache_resource.clear()
                         st.rerun()
 
         with aba_lancar:
@@ -226,6 +227,7 @@ if page is not None:
                         save_to_db("contas_pagar", {"fornecedor": forn, "valor": float(valor), "vencimento": str(venc), "status": status_c})
                         st.success("Conta provisionada!")
                         st.cache_data.clear()
+                        st.cache_resource.clear()
                         st.rerun()
 
         with aba_gerenciar:
@@ -238,7 +240,8 @@ if page is not None:
                     df_contas_exibir['vencimento'] = pd.to_datetime(df_contas_exibir['vencimento']).dt.date
 
                 mudancas_cp = st.data_editor(
-                    df_contas_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_cp_geral",
+                    df_contas_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, 
+                    key="edit_cp_geral",
                     column_config={
                         "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
                         "vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
@@ -253,6 +256,7 @@ if page is not None:
                         supabase.table("contas_pagar").update({"fornecedor": str(row['fornecedor']), "valor": float(row['valor']), "vencimento": str(row['vencimento']), "status": str(row['status'])}).eq("id", row['id']).execute()
                     st.success("Tabela financeira sincronizada!")
                     st.cache_data.clear()
+                    st.cache_resource.clear()
                     st.rerun()
 
     # ===================== 3. PEDIDOS DE COMPRA & ORDEM DE SERVIÇO =====================
@@ -262,12 +266,9 @@ if page is not None:
         aba1, aba2, aba3 = st.tabs(["Emitir Pedido/Ordem", "📋 Histórico Integrado", "🛠️ Gerenciar (Editar/Excluir)"])
         
         with aba1:
-            if "oc_etapa" not in st.session_state: 
-                st.session_state.oc_etapa = 1
-            if "dados_oc" not in st.session_state: 
-                st.session_state.dados_oc = None
-            if "pdf_pronto" not in st.session_state: 
-                st.session_state.pdf_pronto = None
+            if "oc_etapa" not in st.session_state: st.session_state.oc_etapa = 1
+            if "dados_oc" not in st.session_state: st.session_state.dados_oc = None
+            if "pdf_pronto" not in st.session_state: st.session_state.pdf_pronto = None
 
             if st.session_state.oc_etapa == 1:
                 st.subheader("📋 Passo 1: Informações da Ordem de Compra / Serviço")
@@ -330,38 +331,52 @@ if page is not None:
                     st.session_state.oc_etapa = 1
                     st.rerun()
                     
+                # BLOCO CORRIGIDO: EVITAR DUPLICIDADE E LIMPEZA COMPLETA DE CACHE
                 if c_ab2.button("💾 Salvar Ordem no Histórico"):
-                    # 1° CORREÇÃO: Persistência garantida na tabela 'pedidos_compra' com coluna 'valor' unificada
-                    save_to_db("pedidos_compra", {
-                        "oc_numero": str(dados["oc_numero"]), 
-                        "solicitante": str(dados["solicitante"]), 
-                        "fornecedor": str(dados["fornecedor"]), 
-                        "valor": float(dados["valor"]), 
+                    dados_pedido = {
+                        "oc_numero": str(dados["oc_numero"]),
+                        "solicitante": str(dados["solicitante"]),
+                        "fornecedor": str(dados["fornecedor"]),
                         "ordem_servico": str(dados.get("ordem_servico", "")),
+                        "valor": float(dados["valor"]),
                         "status": "Aprovado",
                         "observacoes": str(dados.get("observacoes", ""))
-                    })
-                    
-                    # 2° CORREÇÃO: Integração Financeira Automática na tabela 'contas_pagar'
-                    identificador_financeiro = f"OC {dados['oc_numero']}"
-                    if dados.get("ordem_servico"):
-                        identificador_financeiro += f" / OS {dados['ordem_servico']}"
-                    
-                    save_to_db("contas_pagar", {
-                        "fornecedor": f"{identificador_financeiro} - {dados['fornecedor']}", 
-                        "vencimento": str(datetime.today().date() + timedelta(days=15)), 
-                        "valor": float(dados["valor"]), 
-                        "status": "Pendente"
-                    })
-                    
-                    st.success("🎉 Processo concluído com sucesso e integrado ao Gerencial Financeiro!")
-                    st.session_state.oc_etapa = 1
-                    st.session_state.dados_oc = None
-                    st.session_state.pdf_pronto = None
-                    
-                    # 3° e 4° CORREÇÃO: Limpeza forçada do cache e reload instantâneo das abas e dashboard
-                    st.cache_data.clear()
-                    st.rerun()
+                    }
+
+                    pedido_existente = supabase.table("pedidos_compra") \
+                        .select("*") \
+                        .eq("oc_numero", dados["oc_numero"]) \
+                        .execute()
+
+                    if pedido_existente.data:
+                        st.warning("Esta Ordem já está cadastrada.")
+                    else:
+                        salvar_pedido = save_to_db("pedidos_compra", dados_pedido)
+
+                        if salvar_pedido:
+                            identificador_financeiro = f"OC {dados['oc_numero']}"
+                            if dados.get("ordem_servico"):
+                                identificador_financeiro += f" / OS {dados['ordem_servico']}"
+
+                            dados_financeiro = {
+                                "fornecedor": f"{identificador_financeiro} - {dados['fornecedor']}",
+                                "vencimento": str(datetime.today().date() + timedelta(days=15)),
+                                "valor": float(dados["valor"]),
+                                "status": "Pendente"
+                            }
+
+                            save_to_db("contas_pagar", dados_financeiro)
+                            st.success("✅ Ordem salva e integrada com sucesso!")
+
+                            st.session_state.oc_etapa = 1
+                            st.session_state.dados_oc = None
+                            st.session_state.pdf_pronto = None
+
+                            st.cache_data.clear()
+                            st.cache_resource.clear()
+                            st.rerun()
+                        else:
+                            st.error("Erro ao salvar pedido.")
 
         with aba2:
             st.subheader("📋 Histórico Geral de Pedidos & Ordens")
@@ -369,8 +384,8 @@ if page is not None:
             if df is not None and not df.empty:
                 df_vis = df.copy()
                 
-                # Tratamento de segurança para unificar colunas legadas se existirem
-                col_valor = 'valor' if 'valor' in df_vis.columns else 'valor_total'
+                # Padronização de col_valor para 'valor'
+                col_valor = 'valor'
                 df_vis['valor_total_formatado'] = df_vis[col_valor].apply(formatar_moeda_br)
                 
                 if 'ordem_servico' not in df_vis.columns:
@@ -393,62 +408,65 @@ if page is not None:
 
         with aba3:
             st.subheader("🛠️ Gerenciar Ordens de Compra e Serviço")
-            df_ger = load_data("pedidos_compra")
             
-            if not df_ger.empty:
-                if 'valor_total' in df_ger.columns and 'valor' not in df_ger.columns:
-                    df_ger = df_ger.rename(columns={'valor_total': 'valor'})
-                if 'ordem_servico' not in df_ger.columns:
-                    df_ger['ordem_servico'] = ""
+            # BLOCO DE SEGURANÇA ADICIONADO PARA O EDITOR DE DADOS
+            df_ger = load_data("pedidos_compra")
+            if df_ger.empty:
+                st.info("Nenhum pedido encontrado.")
+                st.stop()
                 
-                df_ger['valor'] = df_ger['valor'].astype(float) if 'valor' in df_ger.columns else 0.0
-                colunas_finais_editor = ["id", "oc_numero", "solicitante", "fornecedor", "ordem_servico", "valor", "status", "observacoes"]
-                df_ger_filtrado = df_ger[[c for c in colunas_finais_editor if c in df_ger.columns]]
+            if 'ordem_servico' not in df_ger.columns:
+                df_ger['ordem_servico'] = ""
+                
+            df_ger['valor'] = df_ger['valor'].astype(float) if 'valor' in df_ger.columns else 0.0
+            colunas_finais_editor = ["id", "oc_numero", "solicitante", "fornecedor", "ordem_servico", "valor", "status", "observacoes"]
+            df_ger_filtrado = df_ger[[c for c in colunas_finais_editor if c in df_ger.columns]]
 
-                mudancas = st.data_editor(
-                    df_ger_filtrado, 
-                    use_container_width=True, 
-                    num_rows="dynamic", 
-                    hide_index=True, 
-                    key="edit_pc_v5", 
-                    column_config={
-                        "id": st.column_config.NumberColumn("ID Interno", disabled=True),
-                        "ordem_servico": st.column_config.TextColumn("OS / Contrato"),
-                        "valor": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
-                        "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
-                    }
-                )
-                
-                if st.button("💾 Sincronizar e Salvar Alterações"):
-                    try:
-                        ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
-                        ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
-                        ids_deletados = ids_originais - ids_finais
-                        
-                        if ids_deletados:
-                            for id_del in ids_deletados: 
-                                supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
-                        
-                        for idx, row in mudancas.iterrows():
-                            dados_linha = {
-                                "oc_numero": str(row['oc_numero']) if pd.notna(row.get('oc_numero')) else "",
-                                "solicitante": str(row['solicitante']) if pd.notna(row.get('solicitante')) else "", 
-                                "fornecedor": str(row['fornecedor']) if pd.notna(row.get('fornecedor')) else "", 
-                                "ordem_servico": str(row['ordem_servico']) if pd.notna(row.get('ordem_servico')) else "",
-                                "valor": float(row['valor']) if pd.notna(row.get('valor')) else 0.0, 
-                                "status": str(row['status']) if pd.notna(row.get('status')) else "Em Análise", 
-                                "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
-                            }
-                            if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
-                                supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
-                            else:
-                                supabase.table("pedidos_compra").insert(dados_linha).execute()
-                 
-                        st.success("Banco de dados sincronizado com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro: {e}")
+            mudancas = st.data_editor(
+                df_ger_filtrado, 
+                use_container_width=True, 
+                num_rows="dynamic", 
+                hide_index=True, 
+                key="edit_pc_v5", 
+                column_config={
+                    "id": st.column_config.NumberColumn("ID Interno", disabled=True),
+                    "ordem_servico": st.column_config.TextColumn("OS / Contrato"),
+                    "valor": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
+                    "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
+                }
+            )
+            
+            if st.button("💾 Sincronizar e Salvar Alterações"):
+                try:
+                    ids_originais = set(df_ger['id'].dropna().tolist()) if 'id' in df_ger.columns else set()
+                    ids_finais = set(mudancas['id'].dropna().tolist()) if 'id' in mudancas.columns else set()
+                    ids_deletados = ids_originais - ids_finais
+                    
+                    if ids_deletados:
+                        for id_del in ids_deletados: 
+                            supabase.table("pedidos_compra").delete().eq("id", id_del).execute()
+                    
+                    for idx, row in mudancas.iterrows():
+                        dados_linha = {
+                            "oc_numero": str(row['oc_numero']) if pd.notna(row.get('oc_numero')) else "",
+                            "solicitante": str(row['solicitante']) if pd.notna(row.get('solicitante')) else "", 
+                            "fornecedor": str(row['fornecedor']) if pd.notna(row.get('fornecedor')) else "", 
+                            "ordem_servico": str(row['ordem_servico']) if pd.notna(row.get('ordem_servico')) else "",
+                            "valor": float(row['valor']) if pd.notna(row.get('valor')) else 0.0, 
+                            "status": str(row['status']) if pd.notna(row.get('status')) else "Em Análise", 
+                            "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
+                        }
+                        if 'id' in row and pd.notna(row['id']) and row['id'] in ids_originais:
+                            supabase.table("pedidos_compra").update(dados_linha).eq("id", row['id']).execute()
+                        else:
+                            supabase.table("pedidos_compra").insert(dados_linha).execute()
+               
+                    st.success("Banco de dados sincronizado com sucesso!")
+                    st.cache_data.clear()
+                    st.cache_resource.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
 
     # ===================== 4. ACORDOS JUDICIAIS =====================
     elif page == "⚖️ Acordos Judiciais":
@@ -473,9 +491,10 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado!")
                             st.cache_data.clear()
+                            st.cache_resource.clear()
                             st.rerun()
 
         with aba2:
@@ -492,17 +511,15 @@ if page is not None:
             if not df_ger.empty:
                 df_ger['valor_parcela'] = df_ger['valor_parcela'].astype(float)
                 df_ger_exibir = df_ger.copy()
-                if 'vencimento' in df_ger_exibir.columns: 
-                    df_ger_exibir['vencimento'] = pd.to_datetime(df_ger_exibir['vencimento']).dt.date
+                if 'vencimento' in df_ger_exibir.columns: df_ger_exibir['vencimento'] = pd.to_datetime(df_ger_exibir['vencimento']).dt.date
                 mudancas = st.data_editor(df_ger_exibir, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_aj")
                 if st.button("💾 Sincronizar Cronograma"):
                     id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]: 
-                        supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
-                    for idx, row in mudancas.iterrows(): 
-                        supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
+                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]: supabase.table("parcelas_acordo").delete().eq("id", id_del).execute()
+                    for idx, row in mudancas.iterrows(): supabase.table("parcelas_acordo").update({"numero_parcela": int(row['numero_parcela']), "valor_parcela": float(row['valor_parcela']), "vencimento": str(row['vencimento']), "status_parc": str(row['status_parc'])}).eq("id", row['id']).execute()
                     st.success("Atualizado!")
                     st.cache_data.clear()
+                    st.cache_resource.clear()
                     st.rerun()
 
     # ===================== 5. SALÁRIOS =====================
@@ -528,6 +545,7 @@ if page is not None:
                         save_to_db("contas_pagar", {"fornecedor": f"Folha - {mes_ref} ({func})", "valor": custo_liquido_folha, "vencimento": str(calcular_quinto_dia_util_mes_seguinte()), "status": "Pendente"})
                         st.success("Folha provisionada!")
                         st.cache_data.clear()
+                        st.cache_resource.clear()
                         st.rerun()
 
         with aba2:
@@ -535,8 +553,7 @@ if page is not None:
             if not df.empty:
                 df_vis = df.copy()
                 df_vis['Custo Total'] = df_vis['salario_base'] + df_vis['beneficios'] - df_vis['descontos']
-                for col in ['salario_base', 'beneficios', 'descontos', 'Custo Total']: 
-                    df_vis[col] = df_vis[col].apply(formatar_moeda_br)
+                for col in ['salario_base', 'beneficios', 'descontos', 'Custo Total']: df_vis[col] = df_vis[col].apply(formatar_moeda_br)
                 st.dataframe(df_vis[['funcionario', 'funcao', 'mes_referencia', 'salario_base', 'beneficios', 'descontos', 'Custo Total']], use_container_width=True, hide_index=True)
 
         with aba3:
@@ -559,6 +576,7 @@ if page is not None:
                         supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
                         supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
-                    st.success("Folha salarial updated!")
+                    st.success("Folha salarial atualizada!")
                     st.cache_data.clear()
+                    st.cache_resource.clear()
                     st.rerun()

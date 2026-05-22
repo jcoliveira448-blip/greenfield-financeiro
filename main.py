@@ -641,6 +641,3 @@ elif page == "👥 Salários":
                     
                 except Exception as e:
                     st.error(f"Erro ao sincronizar com o banco de dados: {e}")
-                
-            except Exception as e:
-                st.error(f"Erro ao sincronizar com o banco de dados: {e}")

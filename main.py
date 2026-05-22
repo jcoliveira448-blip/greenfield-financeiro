@@ -484,9 +484,7 @@ elif page == "🛒 Pedidos de Compra":
                     st.cache_resource.clear()
                     st.rerun()
                     
-                except Exception as e:
-                    st.error(f"Erro ao sincronizar dados com o banco: {e}")
-    # ===================== 4. ACORDOS JUDICIAIS =====================
+         # ===================== 4. ACORDOS JUDICIAIS =====================
     elif page == "⚖️ Acordos Judiciais":
         st.title("⚖️ Controle de Acordos Judiciais")
         aba1, aba2, aba3 = st.tabs(["Firmar Acordo", "📋 Histórico de Parcelas Completo", "🛠️ Gerenciar (Editar/Excluir)"])

@@ -183,7 +183,6 @@ if page is not None:
     elif page == "💳 Contas a Pagar & Caixa":
         st.title("💳 Contas a Pagar & Controle de Caixa")
         
-        # Correção 2: Abas alinhadas com o pedido original
         aba_caixa, aba_lancar, aba_gerenciar = st.tabs(["📊 Saldo & Medições", "📋 Lançar Nova Conta", "🛠️ Gerenciar Contas"])
         
         with aba_caixa:
@@ -201,7 +200,7 @@ if page is not None:
                 if st.form_submit_button("🚀 Inserir Medição"):
                     if nova_ordem and novo_valor > 0:
                         save_to_db("medicoes_caixa", {"ordem": str(nova_ordem), "valor": float(novo_valor), "data_medicao": str(nova_data)})
-                        st.success("Saldo atualizado!")
+                        st.success("Saldo updated!")
                         st.cache_resource.clear()
                         st.rerun()
 
@@ -271,6 +270,9 @@ if page is not None:
                     forn = cc3.text_input("Fornecedor / Prestador de Serviço")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
+                    # MELHORIA EXIGIDA PELA IMAGEM: Integração nativa do Campo de Vinculação de OS/Contrato
+                    ordem_servico_vinculo = st.text_input("Vincular OS / Contrato (Opcional)", placeholder="Ex: OS-2026-X ou Contrato Nº")
+                    
                     obs = st.text_area("Observações / Escopo do Serviço")
                     
                     if st.form_submit_button("⚙️ Gerar PDF da Ordem"):
@@ -280,6 +282,7 @@ if page is not None:
                                 "solicitante": str(solicitante), 
                                 "fornecedor": str(forn), 
                                 "valor": float(val_total),
+                                "ordem_servico": str(ordem_servico_vinculo),
                                 "observacoes": str(obs)
                             }
                             
@@ -297,6 +300,8 @@ if page is not None:
                                 Paragraph(f"<b>Fornecedor / Prestador:</b> {forn}", style_corpo),
                                 Paragraph(f"<b>Valor Total:</b> {formatar_moeda_br(val_total)}", style_corpo),
                             ]
+                            if ordem_servico_vinculo:
+                                story.append(Paragraph(f"<b>OS / Contrato Vinculado:</b> {ordem_servico_vinculo}", style_corpo))
                             if obs:
                                 story.append(Paragraph(f"<b>Escopo / Observações:</b> {obs}", style_corpo))
                             
@@ -318,22 +323,30 @@ if page is not None:
                     st.rerun()
                     
                 if c_ab2.button("💾 Salvar Ordem no Histórico"):
-                    # Correção Crítica de Alimentação no Banco: Mapeamento de 'valor' explícito
+                    # AJUSTE CRÍTICO: Persistência exata no Supabase amarrando a OS ao Pedido de Compra
                     save_to_db("pedidos_compra", {
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
                         "fornecedor": str(dados["fornecedor"]), 
                         "valor": float(dados["valor"]), 
+                        "ordem_servico": str(dados.get("ordem_servico", "")),
                         "status": "Aprovado",
                         "observacoes": str(dados.get("observacoes", ""))
                     })
+                    
+                    # Integração Financeira Automática com Contas a Pagar
+                    identificador_financeiro = f"OC {dados['oc_numero']}"
+                    if dados.get("ordem_servico"):
+                        identificador_financeiro += f" / OS {dados['ordem_servico']}"
+                    
                     save_to_db("contas_pagar", {
-                        "fornecedor": f"OC {dados['oc_numero']} - {dados['fornecedor']}", 
+                        "fornecedor": f"{identificador_financeiro} - {dados['fornecedor']}", 
                         "vencimento": str(datetime.today().date() + timedelta(days=15)), 
                         "valor": float(dados["valor"]), 
                         "status": "Pendente"
                     })
-                    st.success("🎉 Processo concluído com sucesso!")
+                    
+                    st.success("🎉 Processo concluído com sucesso e integrado ao Gerencial Financeiro!")
                     st.session_state.oc_etapa = 1
                     st.session_state.dados_oc = None
                     st.session_state.pdf_pronto = None
@@ -348,8 +361,22 @@ if page is not None:
                 col_valor = 'valor' if 'valor' in df_vis.columns else 'valor_total'
                 df_vis['valor_total_formatado'] = df_vis[col_valor].apply(formatar_moeda_br)
                 
-                df_vis = df_vis.rename(columns={'oc_numero': 'Nº da OC/OS', 'solicitante': 'Solicitante', 'fornecedor': 'Fornecedor', 'valor_total_formatado': 'Valor Alocado', 'status': 'Status', 'observacoes': 'Observações'})
-                st.dataframe(df_vis[[c for c in ['Nº da OC/OS', 'Solicitante', 'Fornecedor', 'Valor Alocado', 'Status', 'Observações'] if c in df_vis.columns]], use_container_width=True, hide_index=True)
+                # Garante que a coluna de Ordem de Serviço existe na visualização gerencial do histórico
+                if 'ordem_servico' not in df_vis.columns:
+                    df_vis['ordem_servico'] = ""
+                
+                df_vis = df_vis.rename(columns={
+                    'oc_numero': 'Nº da OC/OS', 
+                    'solicitante': 'Solicitante', 
+                    'fornecedor': 'Fornecedor', 
+                    'ordem_servico': 'OS/Contrato Vinculado',
+                    'valor_total_formatado': 'Valor Alocado', 
+                    'status': 'Status', 
+                    'observacoes': 'Observações'
+                })
+                
+                colunas_exibicao = ['Nº da OC/OS', 'Solicitante', 'Fornecedor', 'OS/Contrato Vinculado', 'Valor Alocado', 'Status', 'Observações']
+                st.dataframe(df_vis[[c for c in colunas_exibicao if c in df_vis.columns]], use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma ordem cadastrada no histórico do Supabase.")
 
@@ -360,9 +387,11 @@ if page is not None:
             if not df_ger.empty:
                 if 'valor_total' in df_ger.columns and 'valor' not in df_ger.columns:
                     df_ger = df_ger.rename(columns={'valor_total': 'valor'})
+                if 'ordem_servico' not in df_ger.columns:
+                    df_ger['ordem_servico'] = ""
                 
                 df_ger['valor'] = df_ger['valor'].astype(float) if 'valor' in df_ger.columns else 0.0
-                colunas_finais_editor = ["id", "oc_numero", "solicitante", "fornecedor", "valor", "status", "observacoes"]
+                colunas_finais_editor = ["id", "oc_numero", "solicitante", "fornecedor", "ordem_servico", "valor", "status", "observacoes"]
                 df_ger_filtrado = df_ger[[c for c in colunas_finais_editor if c in df_ger.columns]]
 
                 mudancas = st.data_editor(
@@ -370,9 +399,10 @@ if page is not None:
                     use_container_width=True, 
                     num_rows="dynamic", 
                     hide_index=True, 
-                    key="edit_pc_v4", 
+                    key="edit_pc_v5", 
                     column_config={
                         "id": st.column_config.NumberColumn("ID Interno", disabled=True),
+                        "ordem_servico": st.column_config.TextColumn("OS / Contrato"),
                         "valor": st.column_config.NumberColumn("Valor Total (R$)", format="R$ %.2f"), 
                         "status": st.column_config.SelectboxColumn("Status", options=["Aprovado", "Negado", "Em Análise"])
                     }
@@ -393,6 +423,7 @@ if page is not None:
                                 "oc_numero": str(row['oc_numero']) if pd.notna(row.get('oc_numero')) else "",
                                 "solicitante": str(row['solicitante']) if pd.notna(row.get('solicitante')) else "", 
                                 "fornecedor": str(row['fornecedor']) if pd.notna(row.get('fornecedor')) else "", 
+                                "ordem_servico": str(row['ordem_servico']) if pd.notna(row.get('ordem_servico')) else "",
                                 "valor": float(row['valor']) if pd.notna(row.get('valor')) else 0.0, 
                                 "status": str(row['status']) if pd.notna(row.get('status')) else "Em Análise", 
                                 "observacoes": str(row['observacoes']) if pd.notna(row.get('observacoes')) else ""
@@ -431,7 +462,7 @@ if page is not None:
                             valor_parcela = float(val_total) / int(qtd_parc)
                             for i in range(1, int(qtd_parc) + 1):
                                 venc_parcela = data_ini + timedelta(days=(i-1)*30)
-                                save_to_db("parcelas_acordo", {"acordo_id": acuerdo_id if 'acuerdo_id' in locals() else acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
+                                save_to_db("parcelas_acordo", {"acordo_id": acordo_id, "numero_parcela": i, "valor_parcela": valor_parcela, "vencimento": venc_parcela.strftime('%Y-%m-%d'), "status_parc": "Pendente"})
                             st.success("✅ Acordo firmado!")
                             st.cache_resource.clear()
                             st.rerun()
@@ -499,12 +530,20 @@ if page is not None:
                 df_ger['salario_base'] = df_ger['salario_base'].astype(float)
                 df_ger['beneficios'] = df_ger['beneficios'].astype(float)
                 df_ger['descontos'] = df_ger['descontos'].astype(float)
-                mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_sl")
+                mudancas = st.data_editor(df_ger, use_container_width=True, num_rows="dynamic", hide_index=True, key="edit_sl",
+                    column_config={
+                        "salario_base": st.column_config.NumberColumn("Salário Base (R$)", format="R$ %.2f"),
+                        "beneficios": st.column_config.NumberColumn("Benefícios (R$)", format="R$ %.2f"),
+                        "descontos": st.column_config.NumberColumn("Descontos (R$)", format="R$ %.2f"),
+                        "mes_referencia": st.column_config.SelectboxColumn("Mês Ref", options=["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
+                    }
+                )
                 if st.button("💾 Sincronizar Folha"):
                     id_tela = mudancas['id'].tolist() if 'id' in mudancas.columns else []
-                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]: supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
+                    for id_del in [x for x in df_ger['id'].tolist() if x not in id_tela]:
+                        supabase.table("folha_pagamento").delete().eq("id", id_del).execute()
                     for idx, row in mudancas.iterrows():
                         supabase.table("folha_pagamento").update({"funcionario": str(row['funcionario']), "funcao": str(row['funcao']), "salario_base": float(row['salario_base']), "beneficios": float(row['beneficios']), "descontos": float(row['descontos']), "mes_referencia": str(row['mes_referencia'])}).eq("id", row['id']).execute()
-                    st.success("Folha atualizada!")
+                    st.success("Folha salarial atualizada!")
                     st.cache_resource.clear()
                     st.rerun()

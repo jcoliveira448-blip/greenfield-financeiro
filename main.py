@@ -127,27 +127,22 @@ def gerar_pdf_manual():
     style_corpo = ParagraphStyle('CorpoManual', parent=styles['Normal'], fontSize=11, leading=16, spaceAfter=8)
     
     story = [
-        Paragraph("<b>Manual do Usuário: Módulo de Pedidos de Compra (OC)</b>", style_titulo),
+        Paragraph("<b>Manual do Usuário: Módulo de Pedidos de Compra e OS</b>", style_titulo),
         Paragraph("<i>Greenfield - ERP Corporativo</i>", style_corpo),
         Spacer(1, 15),
         
         Paragraph("<b>1. Como preencher o Passo 1:</b>", style_sub),
-        Paragraph("• <b>Número da OC:</b> Código sequencial identificador do pedido (Ex: OC-2026-001).", style_corpo),
-        Paragraph("• <b>Solicitante / Engenheiro:</b> Nome de quem requisitou o suprimento na obra.", style_corpo),
-        Paragraph("• <b>Fornecedor:</b> Empresa ou parceiro onde a compra está sendo executada.", style_corpo),
-        Paragraph("• <b>Valor Total (R$):</b> Valor final negociado. Use ponto para os centavos.", style_corpo),
-        Paragraph("• <b>Observações:</b> Campo opcional para detalhar termos de entrega, restrições ou recados.", style_corpo),
+        Paragraph("• <b>Número da OC / OS:</b> Código sequencial identificador do pedido ou serviço.", style_corpo),
+        Paragraph("• <b>Solicitante / Setor:</b> Nome do engenheiro ou responsável técnico.", style_corpo),
+        Paragraph("• <b>Fornecedor / Prestador:</b> Razão social do parceiro homologado.", style_corpo),
+        Paragraph("• <b>Valor Total (R$):</b> Valor acordado para o fechamento.", style_corpo),
+        Paragraph("• <b>Observações / Escopo:</b> Detalhamento de entregas ou do serviço prestado.", style_corpo),
         Spacer(1, 10),
         
         Paragraph("<b>2. Salvando e Gerando o Documento (Passo 2):</b>", style_sub),
-        Paragraph("• Clique em 'Gerar PDF do Pedido' para revisar a folha de Ordem de Compra.", style_corpo),
-        Paragraph("• Use o botão 'Baixar PDF' para guardar uma cópia do documento emitido.", style_corpo),
-        Paragraph("• <b>OBRIGATÓRIO:</b> Clique em 'Salvar Pedido no Histórico'. Esse botão integra a compra à fila de Contas a Pagar do Financeiro Central.", style_corpo),
-        Spacer(1, 10),
-        
-        Paragraph("<b>3. Edições e Correções:</b>", style_sub),
-        Paragraph("• Se errar, utilize a aba 'Gerenciar' para alterar valores ou fornecedores.", style_corpo),
-        Paragraph("• Lembre-se de clicar em 'Sincronizar Compras' para consolidar as alterações.", style_corpo),
+        Paragraph("• Clique em 'Gerar PDF do Pedido' para revisar a folha técnica.", style_corpo),
+        Paragraph("• Use o botão 'Baixar PDF' para salvar localmente.", style_corpo),
+        Paragraph("• <b>OBRIGATÓRIO:</b> Clique em 'Salvar Ordem no Histórico' para persistir os dados no histórico e lançar a provisão automática no Contas a Pagar.", style_corpo),
     ]
     doc.build(story)
     pdf_buffer.seek(0)
@@ -216,7 +211,7 @@ if page is not None:
         df_pedidos = load_data("pedidos_compra")
         df_parcelas = load_data("parcelas_acordo")
         
-        # 3° PONTO SOLICITADO: Consolidação e soma robusta do Contas a Pagar
+        # 3° Correção: Soma total consolidada do Contas a Pagar no Dashboard
         val_contas = df_contas['valor'].astype(float).sum() if not df_contas.empty and 'valor' in df_contas.columns else 0.0
         
         if not df_pedidos.empty:
@@ -230,7 +225,7 @@ if page is not None:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Saldo Projetado em Caixa", formatar_moeda_br(saldo_projetado_caixa))
         c2.metric("Total Contas a Pagar", formatar_moeda_br(val_contas))
-        c3.metric("Total Pedidos de Compra", formatar_moeda_br(val_pedidos))
+        c3.metric("Total Pedidos / OS", formatar_moeda_br(val_pedidos))
         c4.metric("Total Acordos (Parcelas)", formatar_moeda_br(val_judiciais))
         
         st.markdown("---")
@@ -249,7 +244,7 @@ if page is not None:
                 col_val_grafico = 'valor' if 'valor' in df_pedidos.columns else 'valor_total'
                 df_pedidos[col_val_grafico] = df_pedidos[col_val_grafico].astype(float)
                 eixo_x = 'solicitante' if 'solicitante' in df_pedidos.columns else 'fornecedor'
-                fig2 = px.bar(df_pedidos, x=eixo_x, y=col_val_grafico, title="Compras por Responsável/Fornecedor (R$)", color_discrete_sequence=['#0b4d32'])
+                fig2 = px.bar(df_pedidos, x=eixo_x, y=col_val_grafico, title="Compras/Serviços por Responsável (R$)", color_discrete_sequence=['#0b4d32'])
                 st.plotly_chart(fig2, use_container_width=True)
             else:
                 st.info("Sem dados de Pedidos para exibir gráficos.")
@@ -258,7 +253,7 @@ if page is not None:
     elif page == "💳 Contas a Pagar & Caixa":
         st.title("💳 Contas a Pagar & Controle de Caixa")
         
-        # 2° PONTO SOLICITADO: Padronização das abas contendo a estrutura Gerenciar Contas
+        # 2° Correção: Abas padronizadas incluindo explicitamente "🛠️ Gerenciar Contas"
         aba_caixa, aba_lancar, aba_gerenciar = st.tabs(["📊 Saldo & Medições", "📋 Lançar Nova Conta", "🛠️ Gerenciar Contas"])
         
         with aba_caixa:
@@ -298,7 +293,7 @@ if page is not None:
                         st.rerun()
 
         with aba_gerenciar:
-            st.subheader("Gerenciamento Geral de Títulos")
+            st.subheader("Gerenciamento Geral de Títulos (Gerenciar Contas)")
             df_contas_ger = load_data("contas_pagar")
             if not df_contas_ger.empty:
                 df_contas_ger['valor'] = df_contas_ger['valor'].astype(float)
@@ -320,7 +315,7 @@ if page is not None:
                         supabase.table("contas_pagar").delete().eq("id", id_del).execute()
                     for idx, row in mudancas_cp.iterrows():
                         supabase.table("contas_pagar").update({"fornecedor": str(row['fornecedor']), "valor": float(row['valor']), "vencimento": str(row['vencimento']), "status": str(row['status'])}).eq("id", row['id']).execute()
-                    st.success("Tabela sincronizada!")
+                    st.success("Tabela financeira sincronizada!")
                     st.cache_resource.clear()
                     st.rerun()
 
@@ -328,7 +323,7 @@ if page is not None:
     elif page == "🛒 Pedidos de Compra":
         st.title("🛒 Ordens de Compra / Serviço (OC/OS)")
         
-        # 1° PONTO SOLICITADO: Estruturação com Emissão, Histórico e Gerenciar
+        # 1° Correção: Reestruturação completa das abas com Histórico Unificado e Gerenciar funcional
         aba1, aba2, aba3 = st.tabs(["Emitir Pedido/Ordem", "📋 Histórico Integrado", "🛠️ Gerenciar (Editar/Excluir)"])
         
         with aba1:
@@ -347,7 +342,7 @@ if page is not None:
                     forn = cc3.text_input("Fornecedor / Prestador de Serviço")
                     val_total = cc4.number_input("Valor Total (R$)", min_value=0.00, format="%.2f")
                     
-                    obs = st.text_area("Observações / Escopo do Serviço / Condições Especiais", help="Detalhes completos sobre a entrega ou execução.")
+                    obs = st.text_area("Observações / Escopo do Serviço / Condições Especiais", help="Detalhes técnicos completos.")
                     
                     if st.form_submit_button("⚙️ Gerar PDF da Ordem"):
                         if num_oc and forn and val_total > 0:
@@ -369,9 +364,9 @@ if page is not None:
                                 Paragraph("<b>GREENFIELD Engenharia - Ordem de Compra e Serviço (OC/OS)</b>", style_titulo),
                                 Spacer(1, 15),
                                 Paragraph(f"<b>Identificador N°:</b> {num_oc}", style_corpo),
-                                Paragraph(f"<b>Solicitante / Setor Responsável:</b> {solicitante}", style_corpo),
+                                Paragraph(f"<b>Solicitante / Engenheiro Responsável:</b> {solicitante}", style_corpo),
                                 Paragraph(f"<b>Fornecedor / Prestador Homologado:</b> {forn}", style_corpo),
-                                Paragraph(f"<b>Valor Alocado para o Contrato:</b> {formatar_moeda_br(val_total)}", style_corpo),
+                                Paragraph(f"<b>Valor Total do Pedido:</b> {formatar_moeda_br(val_total)}", style_corpo),
                             ]
                             
                             if obs:
@@ -397,14 +392,15 @@ if page is not None:
                 st.download_button(label="📥 Baixar Documento PDF", data=st.session_state.pdf_pronto, file_name=f"Ordem_{dados['oc_numero']}.pdf", mime="application/pdf")
                 
                 st.markdown("---")
-                st.warning("⚠️ Ao salvar, as informações serão consolidadas no histórico e provisionadas no Contas a Pagar.")
+                st.warning("⚠️ Ao clicar abaixo, a ordem será consolidada de forma definitiva no Histórico e provisionada no Financeiro.")
                 
                 c_ab1, c_ab2 = st.columns(2)
-                if c_ab1.button("🔙 Voltar / Editar Dados"):
+                if c_ab1.button("🔙 Voltar / Corrigir Dados"):
                     st.session_state.oc_etapa = 1
                     st.rerun()
                     
                 if c_ab2.button("💾 Salvar Ordem no Histórico"):
+                    # Gravação Conectada nas duas pontas (Módulo e Caixa Geral)
                     save_to_db("pedidos_compra", {
                         "oc_numero": str(dados["oc_numero"]), 
                         "solicitante": str(dados["solicitante"]), 
@@ -419,7 +415,7 @@ if page is not None:
                         "valor": float(dados["valor"]), 
                         "status": "Pendente"
                     })
-                    st.success("🎉 Processo concluído! Histórico e Financeiro alimentados!")
+                    st.success("🎉 Processo concluído! Histórico atualizado e título enviado ao Contas a Pagar.")
                     st.session_state.oc_etapa = 1
                     st.session_state.dados_oc = None
                     st.session_state.pdf_pronto = None
@@ -427,6 +423,7 @@ if page is not None:
                     st.rerun()
 
         with aba2:
+            st.subheader("📋 Histórico Geral de Pedidos & Ordens")
             df = load_data("pedidos_compra")
             if df is not None and not df.empty:
                 df_vis = df.copy()
@@ -437,21 +434,20 @@ if page is not None:
                 colunas_exibir = [c for c in ['Nº da OC/OS', 'Solicitante', 'Fornecedor/Prestador', 'Valor Alocado', 'Status', 'Observações/Escopo'] if c in df_vis.columns]
                 st.dataframe(df_vis[colunas_exibir], use_container_width=True, hide_index=True)
             else:
-                st.info("Nenhuma ordem de compra ou serviço localizada.")
+                st.info("Nenhuma ordem de compra ou serviço localizada no histórico.")
 
         with aba3:
+            st.subheader("🛠️ Gerenciar Ordens de Compra e Serviço")
             df_ger = load_data("pedidos_compra")
             if df_ger is None or df_ger.empty:
                 df_ger = pd.DataFrame(columns=["id", "oc_numero", "solicitante", "fornecedor", "valor", "status", "observacoes"])
                 
             if not df_ger.empty:
-                # SOLUÇÃO DO BUG DO NONE: Força o mapeamento correto na coluna 'valor' do Supabase
                 if 'valor_total' in df_ger.columns and 'valor' not in df_ger.columns:
                     df_ger = df_ger.rename(columns={'valor_total': 'valor'})
                 
                 df_ger['valor'] = df_ger['valor'].astype(float) if 'valor' in df_ger.columns else 0.0
                 
-                # Exibição profissional e limpa eliminando colunas internas desnecessárias para o usuário
                 colunas_finais_editor = ["id", "oc_numero", "solicitante", "fornecedor", "valor", "status", "observacoes"]
                 df_ger_filtrado = df_ger[[c for c in colunas_finais_editor if c in df_ger.columns]]
 
@@ -460,7 +456,7 @@ if page is not None:
                     use_container_width=True, 
                     num_rows="dynamic", 
                     hide_index=True, 
-                    key="edit_pc_v2", 
+                    key="edit_pc_v3", 
                     column_config={
                         "id": st.column_config.NumberColumn("ID Interno", disabled=True),
                         "oc_numero": st.column_config.TextColumn("Nº OC/OS"),
@@ -494,7 +490,7 @@ if page is not None:
                             else:
                                 supabase.table("pedidos_compra").insert(dados_linha).execute()
                  
-                        st.success("Tabela sincronizada com o banco com sucesso!")
+                        st.success("Histórico sincronizado com sucesso!")
                         st.cache_resource.clear()
                         st.rerun()
                     except Exception as e:
@@ -632,6 +628,6 @@ if page is not None:
                             "descontos": float(row['descontos']),
                             "mes_referencia": str(row['mes_referencia'])
                         }).eq("id", row['id']).execute()
-                    st.success("Folha atualizada!")
+                    st.success("Folha salarial atualizada!")
                     st.cache_resource.clear()
                     st.rerun()
